@@ -29,6 +29,7 @@ class BatchDataset(Protocol):
 class TrainingConfig:
     output_dir: str = "checkpoints/upernet-swin-tiny"
     epochs: int = 30
+    initial_epoch: int = 0
     batch_size: int = 1
     gradient_accumulation_steps: int = 8
     learning_rate: float = 6e-5
@@ -45,6 +46,7 @@ class TrainingConfig:
     boundary_weight: float = 0.25
     monitor: str = "crack_dice"
     save_safetensors: bool = True
+    save_last_checkpoint: bool = False
     max_train_samples: int | None = None
     max_val_samples: int | None = None
 
@@ -190,6 +192,10 @@ def train_model(
     """
 
     cfg = TrainingConfig(**config) if isinstance(config, dict) else (config or TrainingConfig())
+    if cfg.initial_epoch < 0:
+        raise ValueError("initial_epoch must be non-negative")
+    if cfg.initial_epoch >= cfg.epochs:
+        raise ValueError("initial_epoch must be smaller than epochs")
     set_seed(cfg.seed)
     dev = torch.device(device) if device is not None else auto_device()
 
@@ -255,7 +261,7 @@ def train_model(
     bad_epochs = 0
     best_path: Path | None = None
 
-    for epoch in range(1, cfg.epochs + 1):
+    for epoch in range(cfg.initial_epoch + 1, cfg.epochs + 1):
         model.train()
         if cfg.freeze_batch_norm:
             freeze_batch_norm_stats(model)
@@ -314,6 +320,11 @@ def train_model(
 
     output = Path(cfg.output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    last_path = (
+        save_checkpoint(model, output / "last", safetensors=cfg.save_safetensors)
+        if cfg.save_last_checkpoint
+        else None
+    )
     history_path = output / "history.json"
     history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
     (output / "training_config.json").write_text(
@@ -323,6 +334,7 @@ def train_model(
         "history": history,
         "history_path": str(history_path),
         "best_checkpoint": str(best_path) if best_path else None,
+        "last_checkpoint": str(last_path) if last_path else None,
         "best_score": best_score,
         "device": str(dev),
     }

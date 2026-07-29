@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 import torch
 from torch import nn
 from torch.utils.data import Dataset
@@ -71,3 +72,40 @@ def test_train_model_with_dummy_model_writes_history(tmp_path):
     assert result["history"]
     assert (tmp_path / "history.json").exists()
     assert (tmp_path / "pytorch_model.bin").exists()
+
+
+def test_train_model_continues_epoch_numbering_and_saves_last_checkpoint(tmp_path):
+    result = train_model(
+        TinyDataset(),
+        model=TinyModel(),
+        config={
+            "output_dir": str(tmp_path),
+            "epochs": 4,
+            "initial_epoch": 2,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "mixed_precision": False,
+            "early_stopping_patience": 10,
+            "save_safetensors": False,
+            "save_last_checkpoint": True,
+        },
+        device="cpu",
+    )
+
+    assert [row["epoch"] for row in result["history"]] == [3, 4]
+    assert result["last_checkpoint"] == str(tmp_path / "last" / "pytorch_model.bin")
+    assert (tmp_path / "last" / "pytorch_model.bin").exists()
+
+
+def test_train_model_rejects_completed_epoch_range(tmp_path):
+    with pytest.raises(ValueError, match="initial_epoch must be smaller than epochs"):
+        train_model(
+            TinyDataset(),
+            model=TinyModel(),
+            config={
+                "output_dir": str(tmp_path),
+                "epochs": 2,
+                "initial_epoch": 2,
+            },
+            device="cpu",
+        )
