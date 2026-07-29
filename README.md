@@ -66,24 +66,44 @@ uv run ourbrain-cv import-negatives \
 # 5. 학습: train/val/test 각각에 검수된 정상 패치가 없으면 자동 중단
 uv run ourbrain-cv train --config configs/upernet_swin_tiny.yaml
 
-# 6. 보류된 test 그룹 평가
+# 6. val 그룹에서 운영 임계값 선택 (test는 보정에 사용하지 않음)
+uv run ourbrain-cv calibrate \
+  --config configs/upernet_swin_tiny.yaml \
+  --checkpoint checkpoints/upernet-swin-tiny \
+  --minimum-image-recall 0.95 \
+  --output artifacts/threshold_calibration.json
+
+# 7. 고정된 임계값으로 보류된 test 그룹을 한 번 평가
 uv run ourbrain-cv evaluate \
   --config configs/upernet_swin_tiny.yaml \
   --checkpoint checkpoints/upernet-swin-tiny \
+  --calibration artifacts/threshold_calibration.json \
   --split test \
   --output artifacts/test_metrics.json
 
-# 7. 대형 BMP 추론
+# 8. test 평가와 같은 고정 임계값으로 대형 BMP 추론
 uv run ourbrain-cv infer \
   --config configs/upernet_swin_tiny.yaml \
   --checkpoint checkpoints/upernet-swin-tiny \
+  --calibration artifacts/threshold_calibration.json \
   --input '/Volumes/새 볼륨/bmp/0003.bmp' \
   --output outputs/0003
 ```
 
-평가는 config의 `threshold`, `minimum_component_pixels`,
-`image_level_minimum_pixels`를 추론과 동일하게 적용하므로, 보고된 이미지 단위
-민감도·특이도는 실제 대형 이미지 판정과 같은 후처리 기준을 사용합니다.
+`calibrate`는 val의 이미지 단위 민감도가 지정값(기본 95%) 이상인 후보 중
+특이도가 가장 높은 임계값을 선택합니다. 동률이면 균열 Dice와 높은 임계값
+순으로 결정합니다. 검수된 정상과 균열 이미지가 val에 모두 없으면 본 보정을
+중단합니다. 생성 JSON에는 체크포인트·manifest·후처리 설정 출처가 기록되며,
+다른 체크포인트나 `minimum_component_pixels` 설정에 잘못 재사용하면
+`evaluate`/`infer`가 중단됩니다. test는 임계값 선택에 사용하지 않고, 선택이
+끝난 뒤 한 번만 최종 평가합니다. 지정한 민감도를 만족하는 임계값이 하나도
+없으면 진단용 곡선은 저장하지만 해당 보정 파일을 평가·추론에 사용하는 것은
+자동으로 거부합니다.
+
+평가와 추론은 보정 JSON의 `threshold`, config의
+`minimum_component_pixels`, `image_level_minimum_pixels`를 동일하게 적용하므로
+보고된 이미지 단위 민감도·특이도는 실제 대형 이미지 판정과 같은 후처리
+기준을 사용합니다.
 
 현재 생성된 `data/negative_review/negative_review.csv`에는 전체 원본 86개에서
 표본화한 후보 200개와 contact sheet 13장이 준비되어 있습니다. 자동 라벨은
@@ -108,9 +128,17 @@ uv run ourbrain-cv train \
   --config configs/smoke_mps.yaml \
   --device mps \
   --allow-positive-only
+uv run ourbrain-cv calibrate \
+  --config configs/smoke_mps.yaml \
+  --checkpoint checkpoints/smoke-mps \
+  --output artifacts/smoke_threshold_calibration.json \
+  --max-samples 1 \
+  --device mps \
+  --allow-positive-only
 uv run ourbrain-cv infer \
   --config configs/smoke_mps.yaml \
   --checkpoint checkpoints/smoke-mps \
+  --calibration artifacts/smoke_threshold_calibration.json \
   --input '/Volumes/새 볼륨/train/crack/0005_022_001.png' \
   --output outputs/smoke-0005 \
   --device mps

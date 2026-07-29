@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import sys
 from collections import Counter
 from pathlib import Path
@@ -91,6 +93,137 @@ def _training_config(raw: dict[str, Any]) -> dict[str, Any]:
     training = dict(raw["training"])
     training.setdefault("seed", int(raw.get("seed", 42)))
     return training
+
+
+def _parse_thresholds(value: str) -> list[float]:
+    try:
+        thresholds = [float(item.strip()) for item in value.split(",") if item.strip()]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("thresholds must be comma-separated numbers") from exc
+    if not thresholds or any(
+        not math.isfinite(item) or item < 0 or item > 1 for item in thresholds
+    ):
+        raise argparse.ArgumentTypeError("thresholds must be between 0 and 1")
+    return thresholds
+
+
+def _probability(value: str) -> float:
+    try:
+        probability = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be a number between 0 and 1") from exc
+    if not math.isfinite(probability) or not 0 <= probability <= 1:
+        raise argparse.ArgumentTypeError("value must be between 0 and 1")
+    return probability
+
+
+def _validate_decision_threshold(value: Any, source: str) -> float:
+    threshold = float(value)
+    if not math.isfinite(threshold) or not 0 <= threshold <= 1:
+        raise ValueError(f"{source} threshold must be between 0 and 1")
+    return threshold
+
+
+def _sha256_file(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).expanduser().resolve().open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _checkpoint_sha256(checkpoint: str | Path) -> str:
+    root = Path(checkpoint).expanduser().resolve()
+    if root.is_file():
+        files = [root]
+        relative_to = root.parent
+    elif root.is_dir():
+        files = sorted(
+            {
+                *root.glob("*.safetensors"),
+                *root.glob("*.bin"),
+                *root.glob("*.json"),
+            }
+        )
+        relative_to = root
+    else:
+        raise ValueError(f"checkpoint does not exist: {root}")
+    if not files:
+        raise ValueError(f"checkpoint has no model/config files: {root}")
+
+    digest = hashlib.sha256()
+    for path in files:
+        digest.update(path.relative_to(relative_to).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _decision_threshold(
+    args: argparse.Namespace,
+    inference_cfg: dict[str, Any],
+    *,
+    manifest: str | Path | None = None,
+) -> float:
+    if getattr(args, "threshold", None) is not None:
+        return _validate_decision_threshold(args.threshold, "explicit")
+    calibration = getattr(args, "calibration", None)
+    if calibration:
+        payload = json.loads(Path(calibration).expanduser().read_text(encoding="utf-8"))
+        if payload.get("schema_version") != 1:
+            raise ValueError("unsupported or missing calibration schema_version")
+        if "selected_threshold" not in payload:
+            raise ValueError("calibration JSON has no selected_threshold")
+        if payload.get("recall_constraint_met") is not True:
+            raise ValueError(
+                "calibration did not meet its image-recall constraint; "
+                "do not use its fallback threshold for evaluation or inference"
+            )
+        provenance = payload.get("provenance")
+        if not isinstance(provenance, dict):
+            raise ValueError("calibration JSON has no provenance object")
+        if provenance.get("selection_split") != "val":
+            raise ValueError("calibration threshold must have been selected on the val split")
+        calibrated_checkpoint = provenance.get("checkpoint")
+        if not calibrated_checkpoint or Path(calibrated_checkpoint).resolve() != Path(
+            args.checkpoint
+        ).expanduser().resolve():
+            raise ValueError("calibration checkpoint does not match --checkpoint")
+        calibrated_checkpoint_sha = provenance.get("checkpoint_sha256")
+        if (
+            not calibrated_checkpoint_sha
+            or calibrated_checkpoint_sha != _checkpoint_sha256(args.checkpoint)
+        ):
+            raise ValueError("calibration checkpoint content hash does not match --checkpoint")
+        calibrated_manifest = provenance.get("manifest")
+        calibrated_manifest_sha = provenance.get("manifest_sha256")
+        if manifest is None or not calibrated_manifest or not calibrated_manifest_sha:
+            raise ValueError("calibration JSON has incomplete manifest provenance")
+        current_manifest = Path(manifest).expanduser().resolve()
+        if Path(calibrated_manifest).resolve() != current_manifest:
+            raise ValueError("calibration manifest does not match the configured manifest")
+        if calibrated_manifest_sha != _sha256_file(current_manifest):
+            raise ValueError("calibration manifest content hash does not match")
+        postprocessing_defaults = {
+            "image_level_minimum_pixels": 16,
+            "minimum_component_pixels": 8,
+        }
+        for field, default in postprocessing_defaults.items():
+            if field not in payload or int(payload[field]) != int(
+                inference_cfg.get(field, default)
+            ):
+                raise ValueError(
+                    f"calibration {field} does not match the inference config"
+                )
+        return _validate_decision_threshold(
+            payload["selected_threshold"], "calibration selected"
+        )
+    return _validate_decision_threshold(
+        inference_cfg.get("threshold", 0.5), "config"
+    )
 
 
 def _import_negatives(args: argparse.Namespace) -> int:
@@ -233,6 +366,11 @@ def _infer(args: argparse.Namespace) -> int:
     raw = load_config(args.config)
     inference_cfg = dict(raw["inference"])
     inference_cfg["memmap_dir"] = args.memmap_dir
+    inference_cfg["threshold"] = _decision_threshold(
+        args,
+        inference_cfg,
+        manifest=raw["data"]["manifest"],
+    )
     config = TiledInferenceConfig(**inference_cfg)
     device = args.device or str(auto_device())
     adapter = load_checkpoint_adapter(
@@ -256,6 +394,11 @@ def _evaluate(args: argparse.Namespace) -> int:
     device = args.device or str(auto_device())
     data_cfg = raw["data"]
     inference_cfg = raw["inference"]
+    threshold = _decision_threshold(
+        args,
+        inference_cfg,
+        manifest=data_cfg["manifest"],
+    )
     dataset = TunnelCrackSegmentationDataset(
         data_cfg["manifest"],
         split=args.split,
@@ -277,7 +420,7 @@ def _evaluate(args: argparse.Namespace) -> int:
         model,
         dataset,
         device=device,
-        threshold=float(inference_cfg.get("threshold", 0.5)),
+        threshold=threshold,
         boundary_tolerance=args.boundary_tolerance,
         image_level_minimum_pixels=int(
             inference_cfg.get("image_level_minimum_pixels", 16)
@@ -285,6 +428,69 @@ def _evaluate(args: argparse.Namespace) -> int:
         minimum_component_pixels=int(
             inference_cfg.get("minimum_component_pixels", 8)
         ),
+        output_json=args.output,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    from ourbrain_cv.data import TunnelCrackSegmentationDataset
+    from ourbrain_cv.evaluation import calibrate_threshold
+    from ourbrain_cv.modeling import enable_mps_compatibility, load_model_for_inference
+    from ourbrain_cv.training import auto_device
+    from ourbrain_cv.transforms import JointSegmentationTransform
+
+    raw = load_config(args.config)
+    device = args.device or str(auto_device())
+    data_cfg = raw["data"]
+    inference_cfg = raw["inference"]
+    manifest = Path(data_cfg["manifest"]).expanduser().resolve()
+    data_summary = _validate_training_manifest(
+        manifest,
+        allow_positive_only=args.allow_positive_only,
+    )
+    dataset = TunnelCrackSegmentationDataset(
+        manifest,
+        split="val",
+        mask_threshold=int(data_cfg.get("mask_threshold", 127)),
+        transform=JointSegmentationTransform(
+            image_size=int(data_cfg.get("image_size", 512)),
+            train=False,
+        ),
+        seed=int(raw.get("seed", 42)),
+    )
+    if args.max_samples is not None:
+        from torch.utils.data import Subset
+
+        dataset = Subset(dataset, range(min(len(dataset), max(0, args.max_samples))))
+    if len(dataset) == 0:
+        raise RuntimeError("Validation split is empty; threshold calibration cannot run.")
+    model = load_model_for_inference(args.checkpoint)
+    if str(device).startswith("mps"):
+        enable_mps_compatibility(model)
+    result = calibrate_threshold(
+        model,
+        dataset,
+        thresholds=args.thresholds,
+        device=device,
+        minimum_image_recall=args.minimum_image_recall,
+        image_level_minimum_pixels=int(
+            inference_cfg.get("image_level_minimum_pixels", 16)
+        ),
+        minimum_component_pixels=int(
+            inference_cfg.get("minimum_component_pixels", 8)
+        ),
+        require_both_image_classes=not args.allow_positive_only,
+        provenance={
+            "selection_split": "val",
+            "checkpoint": str(Path(args.checkpoint).expanduser().resolve()),
+            "checkpoint_sha256": _checkpoint_sha256(args.checkpoint),
+            "manifest": str(manifest),
+            "manifest_sha256": _sha256_file(manifest),
+            "review_audit": data_summary["review_audit"],
+            "positive_only_override": data_summary["positive_only_override"],
+        },
         output_json=args.output,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -395,6 +601,9 @@ def build_parser() -> argparse.ArgumentParser:
     infer.add_argument("--output", required=True)
     infer.add_argument("--device", choices=["cpu", "mps", "cuda"])
     infer.add_argument("--memmap-dir", default="outputs/.memmap")
+    infer_threshold = infer.add_mutually_exclusive_group()
+    infer_threshold.add_argument("--threshold", type=_probability)
+    infer_threshold.add_argument("--calibration")
     infer.set_defaults(handler=_infer)
 
     evaluate = subparsers.add_parser("evaluate", help="evaluate a checkpoint on a held-out split")
@@ -405,7 +614,32 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--boundary-tolerance", type=int, default=2)
     evaluate.add_argument("--max-samples", type=int)
     evaluate.add_argument("--device", choices=["cpu", "mps", "cuda"])
+    evaluate_threshold = evaluate.add_mutually_exclusive_group()
+    evaluate_threshold.add_argument("--threshold", type=_probability)
+    evaluate_threshold.add_argument("--calibration")
     evaluate.set_defaults(handler=_evaluate)
+
+    calibrate = subparsers.add_parser(
+        "calibrate",
+        help="select a validation threshold under an image-recall constraint",
+    )
+    calibrate.add_argument("--config", default="configs/upernet_swin_tiny.yaml")
+    calibrate.add_argument("--checkpoint", required=True)
+    calibrate.add_argument(
+        "--thresholds",
+        type=_parse_thresholds,
+        default=_parse_thresholds("0.3,0.4,0.5,0.6,0.7,0.8,0.9"),
+    )
+    calibrate.add_argument("--minimum-image-recall", type=_probability, default=0.95)
+    calibrate.add_argument("--output", default="artifacts/threshold_calibration.json")
+    calibrate.add_argument("--max-samples", type=int)
+    calibrate.add_argument("--device", choices=["cpu", "mps", "cuda"])
+    calibrate.add_argument(
+        "--allow-positive-only",
+        action="store_true",
+        help="bypass reviewed-negative gate for smoke testing only",
+    )
+    calibrate.set_defaults(handler=_calibrate)
 
     return parser
 
