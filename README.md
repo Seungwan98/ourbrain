@@ -89,6 +89,9 @@ uv run ourbrain-cv infer \
 `uncertain`으로 두며 두 라벨은 학습 음성으로 반영되지 않습니다.
 내보낸 CSV는 Excel/Sheets의 수식 접두사를 중화하며, `import-negatives`가
 학습 반영 시 해당 보호 접두사를 다시 안전하게 복원합니다.
+200개 모두에 결정이 없으면 import가 중단됩니다. 정상 manifest와 함께 생성되는
+`.review.json` 감사 파일의 완료 상태와 SHA-256이 일치하지 않아도 본 학습이
+중단되므로, 일부 검수나 사후 변경이 조용히 학습에 반영되지 않습니다.
 
 ## M2 Pro 스모크 테스트
 

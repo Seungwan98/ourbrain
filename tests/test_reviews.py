@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from ourbrain_cv.manifest import MANIFEST_FIELDS, read_manifest, write_manifest
@@ -10,6 +12,8 @@ from ourbrain_cv.reviews import (
     deterministic_split,
     import_reviewed_negatives,
     restore_spreadsheet_safe_cell,
+    review_audit_path,
+    validate_review_audit,
 )
 
 
@@ -68,7 +72,7 @@ def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Pa
             {
                 "candidate_path": str(ignored),
                 "group_id": "0002",
-                "review_label": "",
+                "review_label": "crack",
             }
         )
 
@@ -77,6 +81,8 @@ def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Pa
     rows = read_manifest(output)
 
     assert summary["added_negatives"] == 1
+    assert summary["review_complete"] is True
+    assert summary["skipped_excluded"] == 1
     assert len(rows) == 2
     negative = rows[-1]
     assert list(negative) == MANIFEST_FIELDS
@@ -84,6 +90,77 @@ def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Pa
     assert negative["positive_pixels"] == "0"
     assert negative["source_kind"] == "reviewed_negative"
     assert negative["split"] == "val"
+    audit = json.loads(review_audit_path(output).read_text(encoding="utf-8"))
+    assert audit["review_complete"] is True
+    assert audit["decision_counts"] == {
+        "negative": 1,
+        "excluded_non_negative": 1,
+        "unreviewed": 0,
+        "invalid": 0,
+    }
+    assert validate_review_audit(output)["output_manifest"] == str(output.resolve())
+
+
+def test_import_reviewed_negatives_rejects_partial_review(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate.png"
+    Image.new("RGB", (8, 8), "gray").save(candidate)
+    manifest = tmp_path / "manifest.csv"
+    write_manifest([], manifest)
+    review = tmp_path / "review.csv"
+
+    def write_decision(label: str) -> None:
+        with review.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["candidate_path", "group_id", "review_label"],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "candidate_path": str(candidate),
+                    "group_id": "001",
+                    "review_label": label,
+                }
+            )
+
+    output = tmp_path / "with_negatives.csv"
+    write_decision("negative")
+    import_reviewed_negatives(review, manifest, output)
+    assert output.exists()
+    assert validate_review_audit(output)["review_complete"] is True
+
+    write_decision("")
+    with pytest.raises(ValueError, match="Review is incomplete"):
+        import_reviewed_negatives(review, manifest, output)
+
+    assert not output.exists()
+    assert not review_audit_path(output).exists()
+    with pytest.raises(RuntimeError, match="provenance is missing"):
+        validate_review_audit(output)
+
+
+def test_import_rejects_colliding_output_paths(tmp_path: Path) -> None:
+    manifest = tmp_path / "manifest.csv"
+    write_manifest([], manifest)
+    review = tmp_path / "review.csv"
+    with review.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["candidate_path", "group_id", "review_label"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "candidate_path": "/candidate.png",
+                "group_id": "001",
+                "review_label": "negative",
+            }
+        )
+
+    with pytest.raises(ValueError, match="paths must differ"):
+        import_reviewed_negatives(review, manifest, manifest)
+    with pytest.raises(ValueError, match="paths must differ"):
+        import_reviewed_negatives(manifest, manifest, tmp_path / "output.csv")
 
 
 def test_import_reviewed_negatives_restores_spreadsheet_safe_candidate_path(

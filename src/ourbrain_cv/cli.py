@@ -137,6 +137,7 @@ def _validate_training_manifest(
     """Require reviewed negatives in every split before a real training run."""
 
     from ourbrain_cv.manifest import read_manifest
+    from ourbrain_cv.reviews import review_audit_path, validate_review_audit
 
     rows = read_manifest(manifest)
     negative_counts = Counter(
@@ -153,12 +154,21 @@ def _validate_training_manifest(
             "Run negative-candidates, complete human review, and import-negatives. "
             "Use --allow-positive-only only for pipeline smoke tests."
         )
+    review_audit = None
+    if not allow_positive_only:
+        review_audit = validate_review_audit(manifest)
     return {
         "manifest": str(Path(manifest).expanduser().resolve()),
         "rows": len(rows),
         "reviewed_negative_counts": {
             split: negative_counts[split] for split in required_splits
         },
+        "review_audit": (
+            str(review_audit_path(Path(manifest).expanduser().resolve()))
+            if review_audit is not None
+            else None
+        ),
+        "review_rows": review_audit.get("review_rows") if review_audit else None,
         "positive_only_override": bool(missing_splits and allow_positive_only),
     }
 

@@ -75,5 +75,7 @@ error: image file is truncated (1994 bytes not processed)
 포함한 hard-negative가 test split에 반드시 포함돼야 합니다.
 
 기본 학습 명령은 `reviewed_negative`가 train/validation/test에 각각 한 개 이상
-없으면 중단됩니다. `--allow-positive-only`는 실행 경로 스모크 테스트 전용이며,
-그 옵션으로 만든 체크포인트는 성능 판정이나 배포에 사용할 수 없습니다.
+없거나, 200개 후보 전체 결정이 기록된 `.review.json` 감사 파일과 manifest
+SHA-256이 일치하지 않으면 중단됩니다. `--allow-positive-only`는 실행 경로
+스모크 테스트 전용이며, 그 옵션으로 만든 체크포인트는 성능 판정이나 배포에
+사용할 수 없습니다.
