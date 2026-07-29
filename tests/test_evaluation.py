@@ -39,3 +39,27 @@ def test_evaluate_dataset_aggregates_positive_and_negative_samples(tmp_path) -> 
     assert result["image_level_specificity"] == 1.0
     assert (tmp_path / "metrics.json").exists()
 
+
+def test_evaluate_dataset_uses_inference_component_filter() -> None:
+    labels = torch.zeros(4, 4, dtype=torch.long)
+    pixels = torch.zeros(3, 4, 4)
+    pixels[:, 1, 1] = 1
+    dataset = [{"pixel_values": pixels, "labels": labels}]
+
+    unfiltered = evaluate_dataset(
+        IdentityLogitModel(),
+        dataset,
+        image_level_minimum_pixels=1,
+        minimum_component_pixels=1,
+    )
+    filtered = evaluate_dataset(
+        IdentityLogitModel(),
+        dataset,
+        image_level_minimum_pixels=1,
+        minimum_component_pixels=2,
+    )
+
+    assert unfiltered["fp"] == 1
+    assert unfiltered["image_level_specificity"] == 0.0
+    assert filtered["fp"] == 0
+    assert filtered["image_level_specificity"] == 1.0

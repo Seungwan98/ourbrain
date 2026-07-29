@@ -26,6 +26,7 @@ def evaluate_dataset(
     threshold: float = 0.5,
     boundary_tolerance: int = 2,
     image_level_minimum_pixels: int = 16,
+    minimum_component_pixels: int = 1,
     output_json: str | Path | None = None,
 ) -> dict[str, Any]:
     """Evaluate a checkpoint and aggregate pixel/image confusion counts."""
@@ -47,6 +48,7 @@ def evaluate_dataset(
                     threshold=threshold,
                     boundary_tolerance=boundary_tolerance,
                     image_level_min_pixels=image_level_minimum_pixels,
+                    minimum_component_pixels=minimum_component_pixels,
                 )
             )
 
@@ -72,6 +74,7 @@ def evaluate_dataset(
         "threshold": threshold,
         "boundary_tolerance": boundary_tolerance,
         "image_level_minimum_pixels": image_level_minimum_pixels,
+        "minimum_component_pixels": minimum_component_pixels,
         "crack_iou": _safe_div(tp, tp + fp + fn),
         "crack_dice": _safe_div(2 * tp, 2 * tp + fp + fn),
         "precision": _safe_div(tp, tp + fp),
@@ -100,4 +103,3 @@ def evaluate_dataset(
         path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         result["output_json"] = str(path.resolve())
     return result
-

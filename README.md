@@ -81,6 +81,10 @@ uv run ourbrain-cv infer \
   --output outputs/0003
 ```
 
+평가는 config의 `threshold`, `minimum_component_pixels`,
+`image_level_minimum_pixels`를 추론과 동일하게 적용하므로, 보고된 이미지 단위
+민감도·특이도는 실제 대형 이미지 판정과 같은 후처리 기준을 사용합니다.
+
 현재 생성된 `data/negative_review/negative_review.csv`에는 전체 원본 86개에서
 표본화한 후보 200개와 contact sheet 13장이 준비되어 있습니다. 자동 라벨은
 입력하지 않았으며, 담당자가 실제 균열이 없는 패치만 `negative`로 표시해야 합니다.

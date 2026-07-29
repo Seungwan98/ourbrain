@@ -9,6 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from .losses import crack_probabilities
+from .postprocessing import remove_small_components
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,22 @@ def masks_from_logits(logits: torch.Tensor, threshold: float = 0.5) -> torch.Ten
     """Threshold crack probability consistently with production inference."""
 
     return crack_probabilities(logits) > threshold
+
+
+def filter_small_components(
+    masks: torch.Tensor, minimum_pixels: int
+) -> torch.Tensor:
+    """Apply the same component-size filter used by tiled inference."""
+
+    masks_bool = masks.bool()
+    if minimum_pixels <= 1:
+        return masks_bool
+    device = masks_bool.device
+    cleaned = [
+        torch.from_numpy(remove_small_components(mask, minimum_pixels)[0])
+        for mask in masks_bool.detach().cpu().numpy()
+    ]
+    return torch.stack(cleaned).to(device=device, dtype=torch.bool)
 
 
 def confusion_counts(pred: torch.Tensor, target: torch.Tensor) -> ConfusionCounts:
@@ -92,6 +109,7 @@ def compute_segmentation_metrics(
     threshold: float = 0.5,
     boundary_tolerance: int = 2,
     image_level_min_pixels: int = 1,
+    minimum_component_pixels: int = 1,
 ) -> dict[str, Any]:
     """Compute pixel, boundary, and image-level crack metrics.
 
@@ -110,7 +128,9 @@ def compute_segmentation_metrics(
             )
         target = labels[:, 0] if labels.ndim == 4 and labels.shape[1] == 1 else labels
         target = target.bool()
-        pred = pred.to(target.device)
+        pred = filter_small_components(
+            pred.to(target.device), minimum_component_pixels
+        )
 
         counts = confusion_counts(pred, target)
         tp, fp, tn, fn = counts.tp, counts.fp, counts.tn, counts.fn

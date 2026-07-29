@@ -282,6 +282,9 @@ def _evaluate(args: argparse.Namespace) -> int:
         image_level_minimum_pixels=int(
             inference_cfg.get("image_level_minimum_pixels", 16)
         ),
+        minimum_component_pixels=int(
+            inference_cfg.get("minimum_component_pixels", 8)
+        ),
         output_json=args.output,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

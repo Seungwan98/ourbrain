@@ -6,6 +6,7 @@ from ourbrain_cv.metrics import (
     boundary_f1,
     compute_segmentation_metrics,
     confusion_counts,
+    filter_small_components,
     masks_from_logits,
 )
 
@@ -68,3 +69,14 @@ def test_two_class_logits_respect_configured_probability_threshold():
 
     assert masks_from_logits(logits, threshold=0.5).item() is True
     assert masks_from_logits(logits, threshold=0.9).item() is False
+
+
+def test_filter_small_components_matches_inference_postprocessing():
+    masks = torch.zeros(1, 8, 8, dtype=torch.bool)
+    masks[0, 1, 1] = True
+    masks[0, 4:6, 4:6] = True
+
+    filtered = filter_small_components(masks, minimum_pixels=2)
+
+    assert not filtered[0, 1, 1]
+    assert filtered[0, 4:6, 4:6].all()
