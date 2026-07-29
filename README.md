@@ -56,6 +56,8 @@ uv run ourbrain-cv review-ui \
 # 브라우저에서 N/C/U로 검수하고 "검수 CSV 내보내기"를 누른 뒤
 # 이 터미널에서 Ctrl-C로 리뷰 서버를 종료합니다.
 
+# 직접 검수하기 어렵다면 아래 "원격 검수" 절차로 Vercel URL을 공유할 수 있습니다.
+
 # 4. 내려받은 CSV에서 정상으로 확인한 행만 새 manifest에 반영
 # review_label에는 negative, normal, no_crack 또는 0을 입력합니다.
 uv run ourbrain-cv import-negatives \
@@ -116,6 +118,67 @@ uv run ourbrain-cv infer \
 200개 모두에 결정이 없으면 import가 중단됩니다. 정상 manifest와 함께 생성되는
 `.review.json` 감사 파일의 완료 상태와 SHA-256이 일치하지 않아도 본 학습이
 중단되므로, 일부 검수나 사후 변경이 조용히 학습에 반영되지 않습니다.
+
+## Vercel 원격 검수
+
+현재 원격 검수 앱은 다음 주소에 프로덕션 배포되어 있습니다.
+
+```text
+https://ourbrain-tunnel-review.vercel.app
+```
+
+접근 코드는 저장소에 커밋하지 않으며 Vercel의 `REVIEW_TOKEN` 환경변수와 로컬
+`.env.remote-review.local`에만 보관합니다. 검수자 브라우저에서는
+`sessionStorage`에만 저장되고 URL, 쿠키, `localStorage`에는 남지 않습니다.
+
+검수자는 다음 기준으로 200장을 판정합니다.
+
+- `N`: 균열 없음 (`negative`) — 학습 정상 패치로 반영
+- `C`: 균열 또는 균열 의심 (`crack`) — 정상 패치에서 제외
+- `U`: 판단 보류 (`uncertain`) — 정상 패치에서 제외
+
+후보 이미지와 판정은 서울 리전의 private Vercel Blob에 저장합니다. 배포된
+정적 사이트에는 후보 이미지와 후보 메타데이터가 없으며, 접근 코드가 확인된
+API만 이미지를 스트리밍합니다. 판정은 immutable 이벤트로 기록하고 동시 저장
+충돌은 재판정 대상으로 표시합니다. 모든 200장 판정과 충돌 해소가 끝나기
+전에는 CSV export도 차단됩니다.
+
+현재 진행 상황 확인:
+
+```bash
+set -a
+source .env.remote-review.local
+set +a
+uv run ourbrain-cv remote-review-status \
+  --url https://ourbrain-tunnel-review.vercel.app
+```
+
+완료된 결과를 내려받아 기존 strict import에 연결:
+
+```bash
+uv run ourbrain-cv remote-review-download \
+  --url https://ourbrain-tunnel-review.vercel.app \
+  --output data/negative_review/negative_review_reviewed.csv
+
+uv run ourbrain-cv import-negatives \
+  --review data/negative_review/negative_review_reviewed.csv \
+  --manifest artifacts/manifest.csv \
+  --output artifacts/manifest_with_negatives.csv
+```
+
+후보 데이터나 UI가 바뀌었을 때 재현 가능한 Vercel 번들 생성:
+
+```bash
+uv run ourbrain-cv remote-review-bundle \
+  --review data/negative_review/negative_review.csv \
+  --manifest artifacts/manifest.csv \
+  --output build/remote-review-app
+```
+
+`build/`와 모든 로컬 환경변수 파일은 Git에서 제외됩니다. 생성 번들의
+`private-candidates/`는 비공개 Blob 업로드에만 사용되고 Vercel의 공개 정적
+출력에는 포함되지 않습니다. API는 이미지 바이트 SHA-256까지 묶은 dataset 식별자에
+속하지 않는 후보 ID를 거부합니다.
 
 ## M2 Pro 스모크 테스트
 

@@ -19,7 +19,7 @@
 - NumPy: BSD-3-Clause
 - PyYAML: MIT
 - safetensors: Apache-2.0
+- Vercel Blob SDK (`@vercel/blob`): Apache-2.0
 
 배포 시 실제 lockfile 버전의 라이선스 텍스트를 다시 수집하고, 고객사 계약과
 모델 배포 방식에 맞는 법률 검토를 수행해야 합니다.
-

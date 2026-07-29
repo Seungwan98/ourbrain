@@ -497,6 +497,45 @@ def _calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _remote_review_bundle(args: argparse.Namespace) -> int:
+    from ourbrain_cv.remote_review import build_remote_review_bundle
+
+    result = build_remote_review_bundle(
+        args.review,
+        args.manifest,
+        args.output,
+        template_dir=args.template,
+        seed=args.seed,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _remote_review_status(args: argparse.Namespace) -> int:
+    from ourbrain_cv.remote_review import remote_review_status
+
+    result = remote_review_status(
+        args.url,
+        token_env=args.token_env,
+        timeout=args.timeout,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _remote_review_download(args: argparse.Namespace) -> int:
+    from ourbrain_cv.remote_review import download_remote_review_csv
+
+    result = download_remote_review_csv(
+        args.url,
+        args.output,
+        token_env=args.token_env,
+        timeout=args.timeout,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ourbrain-cv",
@@ -640,6 +679,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="bypass reviewed-negative gate for smoke testing only",
     )
     calibrate.set_defaults(handler=_calibrate)
+
+    remote_bundle = subparsers.add_parser(
+        "remote-review-bundle",
+        help="build a Vercel source bundle for authenticated remote review",
+    )
+    remote_bundle.add_argument(
+        "--review",
+        default="data/negative_review/negative_review.csv",
+    )
+    remote_bundle.add_argument("--manifest", default="artifacts/manifest.csv")
+    remote_bundle.add_argument(
+        "--template",
+        default="web/remote-review-template",
+    )
+    remote_bundle.add_argument(
+        "--output",
+        default="build/remote-review-app",
+    )
+    remote_bundle.add_argument("--seed", type=int, default=42)
+    remote_bundle.set_defaults(handler=_remote_review_bundle)
+
+    remote_status = subparsers.add_parser(
+        "remote-review-status",
+        help="fetch progress from the authenticated remote review service",
+    )
+    remote_status.add_argument("--url", required=True)
+    remote_status.add_argument("--token-env", default="OURBRAIN_REVIEW_TOKEN")
+    remote_status.add_argument("--timeout", type=float, default=30)
+    remote_status.set_defaults(handler=_remote_review_status)
+
+    remote_download = subparsers.add_parser(
+        "remote-review-download",
+        help="download remote decisions as a strict-import-compatible CSV",
+    )
+    remote_download.add_argument("--url", required=True)
+    remote_download.add_argument(
+        "--output",
+        default="data/negative_review/negative_review_reviewed.csv",
+    )
+    remote_download.add_argument("--token-env", default="OURBRAIN_REVIEW_TOKEN")
+    remote_download.add_argument("--timeout", type=float, default=30)
+    remote_download.set_defaults(handler=_remote_review_download)
 
     return parser
 

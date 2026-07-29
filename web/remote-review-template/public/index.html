@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Remote Hard-Negative Review</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#review-panel">검수 패널로 건너뛰기</a>
+    <header class="app-header" role="banner">
+      <div>
+        <p class="eyebrow">Hard-negative QA</p>
+        <h1>원격 후보 검수</h1>
+      </div>
+      <div class="status-cluster" aria-live="polite" aria-atomic="true">
+        <span id="dataset-pill" class="pill">dataset: loading</span>
+        <span id="revision-pill" class="pill">revision: -</span>
+        <span id="save-status" class="pill save-idle">대기 중</span>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="access-card" aria-labelledby="access-title">
+        <div>
+          <h2 id="access-title">접근 설정</h2>
+          <p>접근 코드는 이 브라우저의 sessionStorage에만 저장되며 API 호출의 Bearer 토큰으로 전송됩니다.</p>
+        </div>
+        <form id="access-form" class="access-form">
+          <label for="access-code">Access code</label>
+          <input id="access-code" name="access-code" type="password" autocomplete="one-time-code" placeholder="코드 입력" />
+          <button type="submit">저장 및 동기화</button>
+          <button id="clear-access" type="button" class="secondary">코드 지우기</button>
+        </form>
+      </section>
+
+      <section class="progress-card" aria-labelledby="progress-title">
+        <div class="section-heading">
+          <h2 id="progress-title">진행률</h2>
+          <button id="download-csv" type="button" class="secondary">완료 CSV 다운로드</button>
+        </div>
+        <div id="progress-grid" class="progress-grid" aria-live="polite"></div>
+      </section>
+
+      <section id="review-panel" class="review-grid" aria-label="후보 검수 영역">
+        <article class="image-card">
+          <div class="image-frame">
+            <img id="candidate-image" alt="검수 후보 이미지" />
+            <div id="image-placeholder" class="image-placeholder">후보 이미지를 불러오는 중입니다.</div>
+          </div>
+          <dl class="path-list">
+            <div>
+              <dt>image path</dt>
+              <dd id="image-path">-</dd>
+            </div>
+            <div>
+              <dt>candidate id</dt>
+              <dd id="candidate-id">-</dd>
+            </div>
+            <div>
+              <dt>split</dt>
+              <dd id="candidate-split">-</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="decision-card" aria-labelledby="decision-title">
+          <div class="section-heading compact">
+            <div>
+              <p id="position-label" class="eyebrow">0 / 0</p>
+              <h2 id="decision-title">후보 라벨</h2>
+            </div>
+            <span id="current-label" class="label-pill unset">미검수</span>
+          </div>
+
+          <div class="label-actions" role="group" aria-label="라벨 선택 단축키 N C U">
+            <button type="button" data-label="N" class="label-button">N <span>균열 없음 · Negative</span></button>
+            <button type="button" data-label="C" class="label-button">C <span>균열/의심 · Crack</span></button>
+            <button type="button" data-label="U" class="label-button">U <span>판단 보류 · Uncertain</span></button>
+            <button id="clear-label" type="button" class="secondary danger">라벨 해제</button>
+          </div>
+
+          <label class="field-label" for="reviewer">Reviewer</label>
+          <input id="reviewer" type="text" autocomplete="name" maxlength="32" placeholder="검수자 이름" />
+
+          <label class="field-label" for="note">Note</label>
+          <textarea id="note" rows="5" maxlength="80" placeholder="판단 근거, 애매한 점, 후속 조치 등을 기록하세요."></textarea>
+
+          <nav class="nav-actions" aria-label="후보 이동">
+            <button id="prev-candidate" type="button" class="secondary">이전</button>
+            <button id="next-candidate" type="button" class="secondary">다음</button>
+            <button id="next-unreviewed" type="button">다음 미검수</button>
+          </nav>
+
+          <details class="metadata-box">
+            <summary>원본 필드 보기</summary>
+            <div id="metadata-table" class="metadata-table"></div>
+          </details>
+        </article>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
