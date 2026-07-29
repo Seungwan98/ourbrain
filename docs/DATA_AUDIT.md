@@ -60,6 +60,7 @@ error: image file is truncated (1994 bytes not processed)
 - `data/negative_review/`: 전체 원본에서 표본화한 정상 검수 후보 200개
 - `data/negative_review/contact_sheet_000.jpg`~`012.jpg`: 검수용 모음 13장
 - `data/negative_review/negative_review.csv`: 아직 라벨이 비어 있는 검수 입력
+- `data/negative_review/review.html`: 단축키·진행 저장·CSV export를 지원하는 로컬 UI
 - `data/negative_review_smoke/`: 첫 원본 BMP에서 생성한 정상 검수 후보 16개
 - `data/negative_review_smoke/contact_sheet_000.jpg`: 검수용 모음
 

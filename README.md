@@ -46,24 +46,34 @@ uv run ourbrain-cv negative-candidates \
   --output data/negative_review \
   --max-candidates 200
 
-# 3. review CSV에서 정상으로 확인한 행만 새 manifest에 반영
+# 3. 브라우저에서 후보를 한 장씩 검수하고 CSV 내보내기
+uv run ourbrain-cv review-ui \
+  --review data/negative_review/negative_review.csv \
+  --manifest artifacts/manifest.csv \
+  --output data/negative_review/review.html \
+  --serve
+
+# 브라우저에서 N/C/U로 검수하고 "검수 CSV 내보내기"를 누른 뒤
+# 이 터미널에서 Ctrl-C로 리뷰 서버를 종료합니다.
+
+# 4. 내려받은 CSV에서 정상으로 확인한 행만 새 manifest에 반영
 # review_label에는 negative, normal, no_crack 또는 0을 입력합니다.
 uv run ourbrain-cv import-negatives \
-  --review data/negative_review/negative_review.csv \
+  --review ~/Downloads/negative_review_reviewed.csv \
   --manifest artifacts/manifest.csv \
   --output artifacts/manifest_with_negatives.csv
 
-# 4. 학습: train/val/test 각각에 검수된 정상 패치가 없으면 자동 중단
+# 5. 학습: train/val/test 각각에 검수된 정상 패치가 없으면 자동 중단
 uv run ourbrain-cv train --config configs/upernet_swin_tiny.yaml
 
-# 5. 보류된 test 그룹 평가
+# 6. 보류된 test 그룹 평가
 uv run ourbrain-cv evaluate \
   --config configs/upernet_swin_tiny.yaml \
   --checkpoint checkpoints/upernet-swin-tiny \
   --split test \
   --output artifacts/test_metrics.json
 
-# 6. 대형 BMP 추론
+# 7. 대형 BMP 추론
 uv run ourbrain-cv infer \
   --config configs/upernet_swin_tiny.yaml \
   --checkpoint checkpoints/upernet-swin-tiny \
@@ -74,6 +84,11 @@ uv run ourbrain-cv infer \
 현재 생성된 `data/negative_review/negative_review.csv`에는 전체 원본 86개에서
 표본화한 후보 200개와 contact sheet 13장이 준비되어 있습니다. 자동 라벨은
 입력하지 않았으며, 담당자가 실제 균열이 없는 패치만 `negative`로 표시해야 합니다.
+리뷰 화면은 진행 상황을 브라우저에 저장하고, train/validation/test별 정상
+확정 개수를 실시간으로 표시합니다. 균열 의심은 `crack`, 판정 곤란은
+`uncertain`으로 두며 두 라벨은 학습 음성으로 반영되지 않습니다.
+내보낸 CSV는 Excel/Sheets의 수식 접두사를 중화하며, `import-negatives`가
+학습 반영 시 해당 보호 접두사를 다시 안전하게 복원합니다.
 
 ## M2 Pro 스모크 테스트
 

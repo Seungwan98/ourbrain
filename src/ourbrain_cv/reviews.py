@@ -11,6 +11,19 @@ from PIL import Image
 from ourbrain_cv.manifest import MANIFEST_FIELDS, read_manifest, write_manifest
 
 NEGATIVE_LABELS = {"0", "negative", "no_crack", "normal"}
+SPREADSHEET_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def restore_spreadsheet_safe_cell(value: str) -> str:
+    """Undo the review UI's formula-injection prefix for internal import."""
+
+    if (
+        len(value) >= 2
+        and value.startswith("'")
+        and value[1:].startswith(SPREADSHEET_FORMULA_PREFIXES)
+    ):
+        return value[1:]
+    return value
 
 
 def deterministic_split(
@@ -54,18 +67,31 @@ def import_reviewed_negatives(
 
     with Path(review_csv).open(newline="", encoding="utf-8") as handle:
         for review in csv.DictReader(handle):
-            label = review.get("review_label", "").strip().lower()
+            label = restore_spreadsheet_safe_cell(
+                review.get("review_label", "")
+            ).strip().lower()
             if label not in NEGATIVE_LABELS:
                 skipped_unreviewed += 1
                 continue
-            candidate = Path(review.get("candidate_path", "")).expanduser().resolve()
+            candidate = (
+                Path(
+                    restore_spreadsheet_safe_cell(
+                        review.get("candidate_path", "")
+                    )
+                )
+                .expanduser()
+                .resolve()
+            )
             if not candidate.is_file():
                 skipped_missing += 1
                 continue
             if str(candidate) in existing_paths:
                 skipped_duplicate += 1
                 continue
-            group_id = review.get("group_id", "").strip() or candidate.stem.split("_", 1)[0]
+            group_id = (
+                restore_spreadsheet_safe_cell(review.get("group_id", "")).strip()
+                or candidate.stem.split("_", 1)[0]
+            )
             split = split_by_group.get(group_id) or deterministic_split(group_id, seed=seed)
             with Image.open(candidate) as image:
                 width, height = image.size
@@ -98,5 +124,10 @@ def import_reviewed_negatives(
     }
 
 
-__all__ = ["MANIFEST_FIELDS", "deterministic_split", "import_reviewed_negatives"]
-
+__all__ = [
+    "MANIFEST_FIELDS",
+    "SPREADSHEET_FORMULA_PREFIXES",
+    "deterministic_split",
+    "import_reviewed_negatives",
+    "restore_spreadsheet_safe_cell",
+]

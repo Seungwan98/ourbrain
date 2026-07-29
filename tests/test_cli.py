@@ -58,3 +58,14 @@ def test_train_parser_supports_manifest_override_and_smoke_bypass():
 
     assert args.manifest == "custom.csv"
     assert args.allow_positive_only is True
+
+
+def test_review_ui_parser_has_portable_defaults():
+    args = build_parser().parse_args(["review-ui"])
+
+    assert args.review == "data/negative_review/negative_review.csv"
+    assert args.manifest == "artifacts/manifest.csv"
+    assert args.output == "data/negative_review/review.html"
+    assert args.serve is False
+    assert args.host == "127.0.0.1"
+    assert args.port == 8765

@@ -106,6 +106,26 @@ def _import_negatives(args: argparse.Namespace) -> int:
     return 0
 
 
+def _review_ui(args: argparse.Namespace) -> int:
+    from ourbrain_cv.review_ui import build_negative_review_ui, serve_review_ui
+
+    result = build_negative_review_ui(
+        args.review,
+        args.output,
+        manifest_csv=args.manifest,
+        seed=args.seed,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.serve:
+        serve_review_ui(
+            result["review_html"],
+            host=args.host,
+            port=args.port,
+            open_browser=not args.no_open_browser,
+        )
+    return 0
+
+
 def _model_config(raw: dict[str, Any]) -> dict[str, Any]:
     allowed = {"checkpoint", "num_labels", "id2label", "label2id"}
     return {key: value for key, value in raw["model"].items() if key in allowed}
@@ -310,6 +330,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     import_negatives.add_argument("--seed", type=int, default=42)
     import_negatives.set_defaults(handler=_import_negatives)
+
+    review_ui = subparsers.add_parser(
+        "review-ui",
+        help="build a local keyboard-driven UI for hard-negative review",
+    )
+    review_ui.add_argument(
+        "--review",
+        default="data/negative_review/negative_review.csv",
+    )
+    review_ui.add_argument("--manifest", default="artifacts/manifest.csv")
+    review_ui.add_argument(
+        "--output",
+        default="data/negative_review/review.html",
+    )
+    review_ui.add_argument("--seed", type=int, default=42)
+    review_ui.add_argument(
+        "--serve",
+        action="store_true",
+        help="serve the UI over localhost for stable browser storage",
+    )
+    review_ui.add_argument(
+        "--host",
+        default="127.0.0.1",
+        choices=["127.0.0.1", "localhost", "::1"],
+        help="loopback address for --serve",
+    )
+    review_ui.add_argument("--port", type=int, default=8765)
+    review_ui.add_argument(
+        "--no-open-browser",
+        action="store_true",
+        help="do not open the default browser when --serve is used",
+    )
+    review_ui.set_defaults(handler=_review_ui)
 
     train = subparsers.add_parser("train", help="fine-tune UPerNet-Swin-Tiny")
     train.add_argument("--config", default="configs/upernet_swin_tiny.yaml")

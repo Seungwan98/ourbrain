@@ -6,11 +6,22 @@ from pathlib import Path
 from PIL import Image
 
 from ourbrain_cv.manifest import MANIFEST_FIELDS, read_manifest, write_manifest
-from ourbrain_cv.reviews import deterministic_split, import_reviewed_negatives
+from ourbrain_cv.reviews import (
+    deterministic_split,
+    import_reviewed_negatives,
+    restore_spreadsheet_safe_cell,
+)
 
 
 def test_deterministic_split_is_stable() -> None:
     assert deterministic_split("0003", seed=42) == deterministic_split("0003", seed=42)
+
+
+def test_restore_spreadsheet_safe_cell_only_unescapes_formula_prefixes() -> None:
+    assert restore_spreadsheet_safe_cell("'=HYPERLINK(...)") == "=HYPERLINK(...)"
+    assert restore_spreadsheet_safe_cell("'+SUM(1,2)") == "+SUM(1,2)"
+    assert restore_spreadsheet_safe_cell("'normal") == "'normal"
+    assert restore_spreadsheet_safe_cell("negative") == "negative"
 
 
 def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Path) -> None:
@@ -74,3 +85,34 @@ def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Pa
     assert negative["source_kind"] == "reviewed_negative"
     assert negative["split"] == "val"
 
+
+def test_import_reviewed_negatives_restores_spreadsheet_safe_candidate_path(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    candidate = Path("=candidate.png")
+    Image.new("RGB", (8, 8), "gray").save(candidate)
+    manifest = Path("manifest.csv")
+    write_manifest([], manifest)
+    review = Path("review.csv")
+    with review.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["candidate_path", "group_id", "review_label"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "candidate_path": "'=candidate.png",
+                "group_id": "'=group",
+                "review_label": "negative",
+            }
+        )
+
+    output = Path("with_negatives.csv")
+    summary = import_reviewed_negatives(review, manifest, output)
+    row = read_manifest(output)[0]
+
+    assert summary["added_negatives"] == 1
+    assert row["image_path"] == str(candidate.resolve())
+    assert row["group_id"] == "=group"
