@@ -29,6 +29,19 @@ def crack_probabilities(logits: torch.Tensor) -> torch.Tensor:
     raise ValueError("logits channel dimension must be >= 1")
 
 
+def _crack_binary_logits(logits: torch.Tensor) -> torch.Tensor:
+    """Return logits for crack versus all non-crack classes."""
+
+    if logits.ndim != 4:
+        raise ValueError(f"logits must have shape [B,C,H,W], got {tuple(logits.shape)}")
+    if logits.shape[1] == 1:
+        return logits[:, 0]
+    if logits.shape[1] >= 2:
+        other_logits = torch.cat((logits[:, :1], logits[:, 2:]), dim=1)
+        return logits[:, 1] - torch.logsumexp(other_logits, dim=1)
+    raise ValueError("logits channel dimension must be >= 1")
+
+
 def binary_focal_loss(
     logits: torch.Tensor,
     labels: torch.Tensor,
@@ -40,9 +53,10 @@ def binary_focal_loss(
     """Binary focal loss over the crack channel with 1- or 2-class logits."""
 
     targets = _binary_targets(labels).to(logits.device)
-    probs = crack_probabilities(logits).clamp(eps, 1.0 - eps)
-    ce = F.binary_cross_entropy(probs, targets, reduction="none")
-    p_t = probs * targets + (1.0 - probs) * (1.0 - targets)
+    binary_logits = _crack_binary_logits(logits)
+    probs = torch.sigmoid(binary_logits)
+    ce = F.binary_cross_entropy_with_logits(binary_logits, targets, reduction="none")
+    p_t = (probs * targets + (1.0 - probs) * (1.0 - targets)).clamp(eps, 1.0 - eps)
     alpha_t = alpha * targets + (1.0 - alpha) * (1.0 - targets)
     return (alpha_t * (1.0 - p_t).pow(gamma) * ce).mean()
 

@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from ourbrain_cv.losses import (
@@ -38,3 +39,18 @@ def test_losses_are_finite_for_empty_masks():
         boundary_loss(logits, labels),
     ]
     assert all(torch.isfinite(x) for x in losses)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required for AMP regression")
+def test_focal_loss_supports_cuda_autocast():
+    logits = torch.randn(1, 2, 8, 8, device="cuda", requires_grad=True)
+    labels = torch.zeros(1, 8, 8, dtype=torch.long, device="cuda")
+    labels[:, 3, 1:7] = 1
+
+    with torch.autocast(device_type="cuda", dtype=torch.float16):
+        loss = binary_focal_loss(logits, labels)
+
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()

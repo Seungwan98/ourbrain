@@ -118,6 +118,7 @@ def test_run_tiled_inference_supports_memmap_accumulators(tmp_path: Path):
     probability = np.load(outputs.probability_path)
     assert np.allclose(probability, 0.75)
     assert outputs.summary["presence"] is True
+    assert list((tmp_path / "memmap").iterdir()) == []
 
 
 def test_dense_prediction_skips_connected_components_and_withholds_presence(

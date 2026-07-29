@@ -215,6 +215,8 @@ def run_tiled_inference(
             )
         finally:
             if tmpdir is not None:
+                _close_memmap(accumulator)
+                _close_memmap(weights)
                 tmpdir.cleanup()
 
 
@@ -257,6 +259,17 @@ def _allocate_accumulators(shape: tuple[int, int], memmap_dir: str | None):
     accumulator[:] = 0
     weights[:] = 0
     return accumulator, weights, tmpdir
+
+
+def _close_memmap(array: np.ndarray) -> None:
+    """Flush and release a memory map before its temporary directory is removed."""
+
+    if not isinstance(array, np.memmap):
+        return
+    array.flush()
+    mmap = getattr(array, "_mmap", None)
+    if mmap is not None:
+        mmap.close()
 
 
 def _save_probability_and_threshold(
