@@ -36,6 +36,17 @@ class TinyModel(nn.Module):
         return SimpleNamespace(logits=self.conv(pixel_values))
 
 
+class TinyStagedModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone = nn.Conv2d(3, 4, kernel_size=1)
+        self.decode_head = nn.Conv2d(4, 2, kernel_size=1)
+
+    def forward(self, pixel_values, labels=None):
+        features = torch.relu(self.backbone(pixel_values))
+        return SimpleNamespace(logits=self.decode_head(features))
+
+
 def test_freeze_batch_norm_stats_keeps_affine_trainable():
     model = nn.Sequential(nn.BatchNorm2d(3))
     model.train()
@@ -109,3 +120,29 @@ def test_train_model_rejects_completed_epoch_range(tmp_path):
             },
             device="cpu",
         )
+
+
+def test_train_model_freezes_then_unfreezes_backbone_with_cosine_schedule(tmp_path):
+    model = TinyStagedModel()
+    result = train_model(
+        TinyDataset(),
+        model=model,
+        config={
+            "output_dir": str(tmp_path),
+            "epochs": 2,
+            "freeze_backbone_epochs": 1,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "mixed_precision": False,
+            "early_stopping_patience": 3,
+            "lr_scheduler": "cosine",
+            "warmup_ratio": 0.25,
+            "minimum_learning_rate_ratio": 0.1,
+            "save_safetensors": False,
+        },
+        device="cpu",
+    )
+
+    assert [row["backbone_frozen"] for row in result["history"]] == [True, False]
+    assert result["history"][0]["learning_rate"] > result["history"][1]["learning_rate"]
+    assert all(parameter.requires_grad for parameter in model.backbone.parameters())

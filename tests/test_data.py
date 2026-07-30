@@ -4,11 +4,13 @@ import csv
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 from PIL import Image
 
 from ourbrain_cv.data import (
     TunnelCrackSegmentationDataset,
+    crack_centered_crop,
     load_crack_mask,
     synthetic_negative_crop,
 )
@@ -173,3 +175,70 @@ def test_synthetic_negative_crop_selects_region_far_from_positive_or_returns_ori
     )
     assert original_image.size == (5, 5)
     assert original_mask is full_positive
+
+
+def test_crack_centered_crop_keeps_a_positive_pixel() -> None:
+    image = Image.new("RGB", (10, 10), (0, 0, 0))
+    mask = Image.new("L", (10, 10), 0)
+    mask.putpixel((9, 9), 1)
+
+    cropped_image, cropped_mask = crack_centered_crop(image, mask, crop_size=4)
+
+    assert cropped_image.size == (4, 4)
+    assert cropped_mask.size == (4, 4)
+    assert int(np.asarray(cropped_mask).sum()) == 1
+
+
+def test_dataset_can_mix_crack_centered_and_negative_sampling(tmp_path: Path) -> None:
+    image_path = tmp_path / "img.bmp"
+    mask_path = tmp_path / "img-L.bmp"
+    _write_rgb(image_path, size=(8, 8))
+    _write_mask(mask_path, size=(8, 8))
+    manifest_path = tmp_path / "manifest.csv"
+    _write_manifest(
+        manifest_path,
+        [
+            {
+                "image_path": str(image_path),
+                "mask_path": str(mask_path),
+                "group_id": "001",
+                "split": "train",
+                "width": "8",
+                "height": "8",
+                "mask_width": "8",
+                "mask_height": "8",
+                "positive_pixels": "1",
+                "source_kind": "paired",
+            },
+        ],
+    )
+
+    positive = TunnelCrackSegmentationDataset(
+        manifest_path,
+        synthetic_negative_probability=0.0,
+        crack_centered_probability=1.0,
+        crack_centered_crop_size=4,
+    )[0]
+    negative = TunnelCrackSegmentationDataset(
+        manifest_path,
+        synthetic_negative_probability=1.0,
+        synthetic_negative_crop_size=3,
+        synthetic_negative_min_distance=0,
+    )[0]
+
+    assert positive["pixel_values"].shape == (3, 4, 4)
+    assert int(positive["labels"].sum()) == 1
+    assert negative["pixel_values"].shape == (3, 3, 3)
+    assert int(negative["labels"].sum()) == 0
+
+
+def test_dataset_rejects_sampling_probabilities_above_one(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.csv"
+    _write_manifest(manifest_path, [])
+
+    with pytest.raises(ValueError, match="must sum to at most 1"):
+        TunnelCrackSegmentationDataset(
+            manifest_path,
+            synthetic_negative_probability=0.6,
+            crack_centered_probability=0.5,
+        )

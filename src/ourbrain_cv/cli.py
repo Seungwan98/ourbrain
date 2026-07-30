@@ -329,6 +329,8 @@ def _train(args: argparse.Namespace) -> int:
             data_cfg.get("synthetic_negative_probability", 0.0)
         ),
         synthetic_negative_crop_size=int(data_cfg.get("synthetic_negative_crop_size", 256)),
+        crack_centered_probability=float(data_cfg.get("crack_centered_probability", 0.0)),
+        crack_centered_crop_size=int(data_cfg.get("crack_centered_crop_size", 384)),
         seed=seed,
     )
     val_dataset = TunnelCrackSegmentationDataset(

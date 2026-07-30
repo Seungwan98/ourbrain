@@ -3,10 +3,13 @@ import torch
 
 from ourbrain_cv.losses import (
     CrackSegmentationLoss,
+    LossWeights,
     binary_focal_loss,
     boundary_loss,
     crack_probabilities,
+    soft_cldice_loss,
     soft_dice_loss,
+    soft_tversky_loss,
 )
 
 
@@ -36,9 +39,41 @@ def test_losses_are_finite_for_empty_masks():
     losses = [
         binary_focal_loss(logits, labels),
         soft_dice_loss(logits, labels),
+        soft_tversky_loss(logits, labels),
+        soft_cldice_loss(logits, labels),
         boundary_loss(logits, labels),
     ]
     assert all(torch.isfinite(x) for x in losses)
+
+
+def test_tversky_and_cldice_prefer_aligned_thin_cracks():
+    labels = torch.zeros(1, 8, 8, dtype=torch.long)
+    labels[:, 3, 1:7] = 1
+    aligned = torch.full((1, 2, 8, 8), -8.0)
+    aligned[:, 0] = 8.0
+    aligned[:, 0, 3, 1:7] = -8.0
+    aligned[:, 1, 3, 1:7] = 8.0
+    missed = aligned.flip(-2)
+
+    assert soft_tversky_loss(aligned, labels) < soft_tversky_loss(missed, labels)
+    assert soft_cldice_loss(aligned, labels) < soft_cldice_loss(missed, labels)
+
+
+def test_combined_loss_includes_configured_tversky_and_cldice():
+    logits = torch.randn(1, 2, 8, 8, requires_grad=True)
+    labels = torch.zeros(1, 8, 8, dtype=torch.long)
+    labels[:, 3, 1:7] = 1
+    criterion = CrackSegmentationLoss(
+        LossWeights(dice=0.0, tversky=1.0, cldice=0.5, cldice_iterations=2)
+    )
+
+    components = criterion.components(logits, labels)
+    loss = criterion(logits, labels)
+    loss.backward()
+
+    assert {"tversky", "cldice"} <= components.keys()
+    assert torch.isfinite(loss)
+    assert logits.grad is not None
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required for AMP regression")

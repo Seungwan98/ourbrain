@@ -75,6 +75,83 @@ def soft_dice_loss(
     return 1.0 - dice.mean()
 
 
+def soft_tversky_loss(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    alpha: float = 0.7,
+    beta: float = 0.3,
+    smooth: float = 1.0,
+) -> torch.Tensor:
+    """Tversky loss with independently tunable false-positive/false-negative costs."""
+
+    if alpha < 0 or beta < 0 or alpha + beta <= 0:
+        raise ValueError("tversky alpha and beta must be non-negative with a positive sum")
+    targets = _binary_targets(labels).to(logits.device)
+    probs = crack_probabilities(logits)
+    dims = tuple(range(1, probs.ndim))
+    true_positive = (probs * targets).sum(dim=dims)
+    false_positive = (probs * (1.0 - targets)).sum(dim=dims)
+    false_negative = ((1.0 - probs) * targets).sum(dim=dims)
+    score = (true_positive + smooth) / (
+        true_positive + alpha * false_positive + beta * false_negative + smooth
+    )
+    return 1.0 - score.mean()
+
+
+def _soft_erode(mask: torch.Tensor) -> torch.Tensor:
+    vertical = -F.max_pool2d(-mask, kernel_size=(3, 1), stride=1, padding=(1, 0))
+    horizontal = -F.max_pool2d(-mask, kernel_size=(1, 3), stride=1, padding=(0, 1))
+    return torch.minimum(vertical, horizontal)
+
+
+def _soft_dilate(mask: torch.Tensor) -> torch.Tensor:
+    return F.max_pool2d(mask, kernel_size=3, stride=1, padding=1)
+
+
+def _soft_open(mask: torch.Tensor) -> torch.Tensor:
+    return _soft_dilate(_soft_erode(mask))
+
+
+def _soft_skeleton(mask: torch.Tensor, iterations: int) -> torch.Tensor:
+    if iterations < 1:
+        raise ValueError("clDice iterations must be at least 1")
+    opened = _soft_open(mask)
+    skeleton = F.relu(mask - opened)
+    for _ in range(iterations):
+        mask = _soft_erode(mask)
+        opened = _soft_open(mask)
+        delta = F.relu(mask - opened)
+        skeleton = skeleton + F.relu(delta - skeleton * delta)
+    return skeleton
+
+
+def soft_cldice_loss(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    *,
+    iterations: int = 3,
+    smooth: float = 1.0,
+) -> torch.Tensor:
+    """Topology-aware centerline Dice loss for thin, potentially fragmented cracks."""
+
+    targets = _binary_targets(labels).to(logits.device).unsqueeze(1)
+    probs = crack_probabilities(logits).unsqueeze(1)
+    predicted_skeleton = _soft_skeleton(probs, iterations)
+    target_skeleton = _soft_skeleton(targets, iterations)
+    dims = tuple(range(1, probs.ndim))
+    topology_precision = (
+        (predicted_skeleton * targets).sum(dim=dims) + smooth
+    ) / (predicted_skeleton.sum(dim=dims) + smooth)
+    topology_sensitivity = (
+        (target_skeleton * probs).sum(dim=dims) + smooth
+    ) / (target_skeleton.sum(dim=dims) + smooth)
+    cldice = (2.0 * topology_precision * topology_sensitivity) / (
+        topology_precision + topology_sensitivity
+    ).clamp_min(torch.finfo(probs.dtype).eps)
+    return 1.0 - cldice.mean()
+
+
 def _gradient_map(x: torch.Tensor) -> torch.Tensor:
     """Differentiable morphology-like edge map using finite differences/max pooling."""
 
@@ -107,8 +184,13 @@ class LossWeights:
     focal: float = 1.0
     dice: float = 1.0
     boundary: float = 0.25
+    tversky: float = 0.0
+    cldice: float = 0.0
     focal_alpha: float = 0.75
     focal_gamma: float = 2.0
+    tversky_alpha: float = 0.7
+    tversky_beta: float = 0.3
+    cldice_iterations: int = 3
 
 
 class CrackSegmentationLoss(nn.Module):
@@ -124,13 +206,29 @@ class CrackSegmentationLoss(nn.Module):
             self.weights.focal * parts["focal"]
             + self.weights.dice * parts["dice"]
             + self.weights.boundary * parts["boundary"]
+            + self.weights.tversky * parts.get("tversky", 0.0)
+            + self.weights.cldice * parts.get("cldice", 0.0)
         )
 
     def components(self, logits: torch.Tensor, labels: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {
+        parts = {
             "focal": binary_focal_loss(
                 logits, labels, alpha=self.weights.focal_alpha, gamma=self.weights.focal_gamma
             ),
             "dice": soft_dice_loss(logits, labels),
             "boundary": boundary_loss(logits, labels),
         }
+        if self.weights.tversky:
+            parts["tversky"] = soft_tversky_loss(
+                logits,
+                labels,
+                alpha=self.weights.tversky_alpha,
+                beta=self.weights.tversky_beta,
+            )
+        if self.weights.cldice:
+            parts["cldice"] = soft_cldice_loss(
+                logits,
+                labels,
+                iterations=self.weights.cldice_iterations,
+            )
+        return parts

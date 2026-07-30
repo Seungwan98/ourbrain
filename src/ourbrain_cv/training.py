@@ -37,13 +37,23 @@ class TrainingConfig:
     num_workers: int = 0
     mixed_precision: bool = True
     freeze_batch_norm: bool = True
+    freeze_backbone_epochs: int = 0
     early_stopping_patience: int = 6
     seed: int = 42
     val_fraction: float = 0.2
     focal_gamma: float = 2.0
+    focal_alpha: float = 0.75
     focal_weight: float = 1.0
     dice_weight: float = 1.0
     boundary_weight: float = 0.25
+    tversky_weight: float = 0.0
+    tversky_alpha: float = 0.7
+    tversky_beta: float = 0.3
+    cldice_weight: float = 0.0
+    cldice_iterations: int = 3
+    lr_scheduler: str = "constant"
+    warmup_ratio: float = 0.0
+    minimum_learning_rate_ratio: float = 0.0
     monitor: str = "crack_dice"
     save_safetensors: bool = True
     save_last_checkpoint: bool = False
@@ -77,6 +87,62 @@ def freeze_batch_norm_stats(model: nn.Module) -> None:
     for module in model.modules():
         if isinstance(module, nn.modules.batchnorm._BatchNorm):
             module.eval()
+
+
+def find_backbone_module(model: nn.Module) -> nn.Module | None:
+    """Find the feature backbone in wrapped or bare Hugging Face segmentation models."""
+
+    roots = [model]
+    wrapped = getattr(model, "model", None)
+    if isinstance(wrapped, nn.Module):
+        roots.append(wrapped)
+    for root in roots:
+        for path in ("upernet.backbone", "backbone"):
+            current: Any = root
+            for name in path.split("."):
+                current = getattr(current, name, None)
+                if current is None:
+                    break
+            if isinstance(current, nn.Module):
+                return current
+    return None
+
+
+def set_module_trainable(module: nn.Module, trainable: bool) -> None:
+    for parameter in module.parameters():
+        parameter.requires_grad_(trainable)
+
+
+def _build_lr_scheduler(
+    optimizer: torch.optim.Optimizer,
+    *,
+    name: str,
+    total_steps: int,
+    warmup_ratio: float,
+    minimum_ratio: float,
+) -> torch.optim.lr_scheduler.LambdaLR | None:
+    if name == "constant":
+        return None
+    if name != "cosine":
+        raise ValueError("lr_scheduler must be 'constant' or 'cosine'")
+    if total_steps < 1:
+        raise ValueError("total scheduler steps must be positive")
+    if not 0.0 <= warmup_ratio < 1.0:
+        raise ValueError("warmup_ratio must be between 0 (inclusive) and 1 (exclusive)")
+    if not 0.0 <= minimum_ratio <= 1.0:
+        raise ValueError("minimum_learning_rate_ratio must be between 0 and 1")
+
+    warmup_steps = round(total_steps * warmup_ratio)
+
+    def multiplier(step: int) -> float:
+        if warmup_steps and step < warmup_steps:
+            return max((step + 1) / warmup_steps, 1.0 / warmup_steps)
+        decay_steps = max(1, total_steps - warmup_steps)
+        progress = min(1.0, max(0.0, (step - warmup_steps) / decay_steps))
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return minimum_ratio + (1.0 - minimum_ratio) * cosine
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, multiplier)
 
 
 def group_train_val_split(
@@ -196,6 +262,9 @@ def train_model(
         raise ValueError("initial_epoch must be non-negative")
     if cfg.initial_epoch >= cfg.epochs:
         raise ValueError("initial_epoch must be smaller than epochs")
+    run_epochs = cfg.epochs - cfg.initial_epoch
+    if not 0 <= cfg.freeze_backbone_epochs <= run_epochs:
+        raise ValueError("freeze_backbone_epochs must fit within the configured epoch range")
     set_seed(cfg.seed)
     dev = torch.device(device) if device is not None else auto_device()
 
@@ -247,11 +316,32 @@ def train_model(
             focal=cfg.focal_weight,
             dice=cfg.dice_weight,
             boundary=cfg.boundary_weight,
+            tversky=cfg.tversky_weight,
+            cldice=cfg.cldice_weight,
+            focal_alpha=cfg.focal_alpha,
             focal_gamma=cfg.focal_gamma,
+            tversky_alpha=cfg.tversky_alpha,
+            tversky_beta=cfg.tversky_beta,
+            cldice_iterations=cfg.cldice_iterations,
         )
     )
+    backbone = find_backbone_module(model)
+    if cfg.freeze_backbone_epochs and backbone is None:
+        raise ValueError("freeze_backbone_epochs requires a model with a discoverable backbone")
+    if backbone is not None and cfg.freeze_backbone_epochs:
+        set_module_trainable(backbone, False)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay
+    )
+    optimizer_steps_per_epoch = math.ceil(
+        len(train_loader) / cfg.gradient_accumulation_steps
+    )
+    scheduler = _build_lr_scheduler(
+        optimizer,
+        name=cfg.lr_scheduler,
+        total_steps=optimizer_steps_per_epoch * run_epochs,
+        warmup_ratio=cfg.warmup_ratio,
+        minimum_ratio=cfg.minimum_learning_rate_ratio,
     )
 
     use_amp = cfg.mixed_precision and dev.type == "cuda"
@@ -262,7 +352,15 @@ def train_model(
     best_path: Path | None = None
 
     for epoch in range(cfg.initial_epoch + 1, cfg.epochs + 1):
+        run_epoch = epoch - cfg.initial_epoch
+        backbone_frozen = bool(
+            backbone is not None and run_epoch <= cfg.freeze_backbone_epochs
+        )
+        if backbone is not None:
+            set_module_trainable(backbone, not backbone_frozen)
         model.train()
+        if backbone_frozen and backbone is not None:
+            backbone.eval()
         if cfg.freeze_batch_norm:
             freeze_batch_norm_stats(model)
         optimizer.zero_grad(set_to_none=True)
@@ -278,6 +376,8 @@ def train_model(
             if step % cfg.gradient_accumulation_steps == 0 or step == len(train_loader):
                 scaler.step(optimizer)
                 scaler.update()
+                if scheduler is not None:
+                    scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
             train_losses.append(float(loss.detach().cpu()) * cfg.gradient_accumulation_steps)
 
@@ -305,6 +405,8 @@ def train_model(
             "epoch": epoch,
             "train_loss": float(np.mean(train_losses)) if train_losses else None,
             "val_loss": val_loss,
+            "learning_rate": float(optimizer.param_groups[0]["lr"]),
+            "backbone_frozen": backbone_frozen,
             **{f"val_{k}": v for k, v in val_metrics.items()},
         }
         history.append(record)

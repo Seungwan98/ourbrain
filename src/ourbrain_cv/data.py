@@ -147,6 +147,44 @@ def synthetic_negative_crop(
     return image, mask
 
 
+def crack_centered_crop(
+    image: Image.Image,
+    mask: Image.Image,
+    *,
+    crop_size: int | tuple[int, int] = 384,
+    rng: random.Random | None = None,
+) -> tuple[Image.Image, Image.Image]:
+    """Crop around a randomly selected crack pixel, else return the original pair."""
+
+    rng = rng or random.Random()
+    image_width, image_height = image.size
+    if isinstance(crop_size, int):
+        crop_width = crop_height = crop_size
+    else:
+        crop_width, crop_height = crop_size
+
+    if crop_width <= 0 or crop_height <= 0:
+        raise ValueError("crop_size must be positive")
+    if crop_width > image_width or crop_height > image_height:
+        return image, mask
+
+    positive_y, positive_x = np.nonzero(np.asarray(mask, dtype=np.uint8) > 0)
+    if positive_x.size == 0:
+        return image, mask
+
+    selected = rng.randrange(positive_x.size)
+    center_x = int(positive_x[selected])
+    center_y = int(positive_y[selected])
+    min_left = max(0, center_x - crop_width + 1)
+    max_left = min(center_x, image_width - crop_width)
+    min_top = max(0, center_y - crop_height + 1)
+    max_top = min(center_y, image_height - crop_height)
+    left = rng.randint(min_left, max_left)
+    top = rng.randint(min_top, max_top)
+    box = (left, top, left + crop_width, top + crop_height)
+    return image.crop(box), mask.crop(box)
+
+
 class TunnelCrackSegmentationDataset(Dataset):
     """PyTorch dataset backed by an OurBrain segmentation manifest.
 
@@ -167,8 +205,19 @@ class TunnelCrackSegmentationDataset(Dataset):
         synthetic_negative_probability: float = 0.0,
         synthetic_negative_crop_size: int = 256,
         synthetic_negative_min_distance: int = 8,
+        crack_centered_probability: float = 0.0,
+        crack_centered_crop_size: int = 384,
         seed: int = 42,
     ) -> None:
+        if not 0.0 <= synthetic_negative_probability <= 1.0:
+            raise ValueError("synthetic_negative_probability must be between 0 and 1")
+        if not 0.0 <= crack_centered_probability <= 1.0:
+            raise ValueError("crack_centered_probability must be between 0 and 1")
+        if synthetic_negative_probability + crack_centered_probability > 1.0:
+            raise ValueError(
+                "synthetic_negative_probability and crack_centered_probability "
+                "must sum to at most 1"
+            )
         rows = _read_manifest_rows(manifest_csv)
         if split is not None:
             rows = [row for row in rows if row.get("split") == split]
@@ -183,6 +232,8 @@ class TunnelCrackSegmentationDataset(Dataset):
         self.synthetic_negative_probability = synthetic_negative_probability
         self.synthetic_negative_crop_size = synthetic_negative_crop_size
         self.synthetic_negative_min_distance = synthetic_negative_min_distance
+        self.crack_centered_probability = crack_centered_probability
+        self.crack_centered_crop_size = crack_centered_crop_size
         self.rng = random.Random(seed)
 
     def __len__(self) -> int:
@@ -201,18 +252,25 @@ class TunnelCrackSegmentationDataset(Dataset):
             image = image.resize(self.image_size, Image.Resampling.BILINEAR)
             mask = mask.resize(self.image_size, Image.Resampling.NEAREST)
 
-        if (
-            mask_path
-            and self.synthetic_negative_probability > 0
-            and self.rng.random() < self.synthetic_negative_probability
-        ):
-            image, mask = synthetic_negative_crop(
-                image,
-                mask,
-                crop_size=self.synthetic_negative_crop_size,
-                min_distance=self.synthetic_negative_min_distance,
-                rng=self.rng,
-            )
+        if mask_path:
+            sample_draw = self.rng.random()
+            if sample_draw < self.synthetic_negative_probability:
+                image, mask = synthetic_negative_crop(
+                    image,
+                    mask,
+                    crop_size=self.synthetic_negative_crop_size,
+                    min_distance=self.synthetic_negative_min_distance,
+                    rng=self.rng,
+                )
+            elif sample_draw < (
+                self.synthetic_negative_probability + self.crack_centered_probability
+            ):
+                image, mask = crack_centered_crop(
+                    image,
+                    mask,
+                    crop_size=self.crack_centered_crop_size,
+                    rng=self.rng,
+                )
 
         if self.transform is not None:
             transformed = self.transform(image=image, mask=mask)
