@@ -14,6 +14,7 @@ from torch import nn
 
 from ourbrain_cv.losses import crack_probabilities
 from ourbrain_cv.metrics import (
+    boundary_f1,
     compute_segmentation_metrics,
     confusion_counts,
     filter_small_components,
@@ -42,20 +43,35 @@ def evaluate_dataset(
     started = time.perf_counter()
 
     with torch.no_grad():
-        for sample in dataset:
+        for sample_index, sample in enumerate(dataset):
             pixel_values = sample["pixel_values"].unsqueeze(0).to(dev)
             labels = sample["labels"].unsqueeze(0).to(dev)
             output = model(pixel_values=pixel_values, labels=labels)
             logits = output.logits if hasattr(output, "logits") else output["logits"]
+            metrics = compute_segmentation_metrics(
+                logits.detach().cpu(),
+                labels.detach().cpu(),
+                threshold=threshold,
+                boundary_tolerance=boundary_tolerance,
+                image_level_min_pixels=image_level_minimum_pixels,
+                minimum_component_pixels=minimum_component_pixels,
+            )
+            metadata = sample.get("metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
             rows.append(
-                compute_segmentation_metrics(
-                    logits.detach().cpu(),
-                    labels.detach().cpu(),
-                    threshold=threshold,
-                    boundary_tolerance=boundary_tolerance,
-                    image_level_min_pixels=image_level_minimum_pixels,
-                    minimum_component_pixels=minimum_component_pixels,
-                )
+                {
+                    "sample_index": sample_index,
+                    "image_path": sample.get("image_path")
+                    or metadata.get("image_path"),
+                    "mask_path": sample.get("mask_path")
+                    or metadata.get("mask_path"),
+                    "group_id": sample.get("group_id")
+                    or metadata.get("group_id"),
+                    "split": metadata.get("split"),
+                    "source_kind": metadata.get("source_kind"),
+                    **metrics,
+                }
             )
 
     elapsed = time.perf_counter() - started
@@ -102,7 +118,33 @@ def evaluate_dataset(
         **counts,
         "elapsed_seconds": elapsed,
         "samples_per_second": len(rows) / elapsed if elapsed > 0 else 0.0,
+        "per_sample": rows,
     }
+    error_cases: list[dict[str, Any]] = []
+    for row in rows:
+        error_types: list[str] = []
+        if row["image_fp"]:
+            error_types.append("image_false_positive")
+        if row["image_fn"]:
+            error_types.append("image_false_negative")
+        if error_types:
+            error_cases.append(
+                {
+                    "sample_index": row["sample_index"],
+                    "image_path": row["image_path"],
+                    "mask_path": row["mask_path"],
+                    "group_id": row["group_id"],
+                    "split": row["split"],
+                    "source_kind": row["source_kind"],
+                    "error_types": error_types,
+                    "false_positive_pixels": row["fp"],
+                    "false_negative_pixels": row["fn"],
+                    "crack_dice": row["crack_dice"],
+                    "boundary_f1": row["boundary_f1"],
+                }
+            )
+    result["error_case_count"] = len(error_cases)
+    result["error_cases"] = error_cases
     if output_json is not None:
         path = Path(output_json)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -120,6 +162,7 @@ def calibrate_threshold(
     minimum_image_recall: float = 0.95,
     image_level_minimum_pixels: int = 16,
     minimum_component_pixels: int = 8,
+    boundary_tolerance: int = 2,
     require_both_image_classes: bool = True,
     provenance: dict[str, Any] | None = None,
     output_json: str | Path | None = None,
@@ -137,6 +180,8 @@ def calibrate_threshold(
         raise ValueError("image_level_minimum_pixels must be at least 1")
     if minimum_component_pixels < 1:
         raise ValueError("minimum_component_pixels must be at least 1")
+    if boundary_tolerance < 0:
+        raise ValueError("boundary_tolerance must be non-negative")
 
     count_fields = (
         "tp",
@@ -149,7 +194,13 @@ def calibrate_threshold(
         "image_fn",
     )
     counts_by_threshold = {
-        threshold: {field: 0 for field in count_fields} for threshold in candidates
+        threshold: {
+            **{field: 0 for field in count_fields},
+            "boundary_precision_sum": 0.0,
+            "boundary_recall_sum": 0.0,
+            "boundary_f1_sum": 0.0,
+        }
+        for threshold in candidates
     }
     dev = torch.device(device)
     model.to(dev).eval()
@@ -181,6 +232,11 @@ def calibrate_threshold(
                     >= image_level_minimum_pixels
                 )
                 image_counts = confusion_counts(predicted_image, target_image)
+                boundary = boundary_f1(
+                    prediction,
+                    target,
+                    tolerance=boundary_tolerance,
+                )
                 current = counts_by_threshold[threshold]
                 current["tp"] += pixel_counts.tp
                 current["fp"] += pixel_counts.fp
@@ -190,6 +246,11 @@ def calibrate_threshold(
                 current["image_fp"] += image_counts.fp
                 current["image_tn"] += image_counts.tn
                 current["image_fn"] += image_counts.fn
+                current["boundary_precision_sum"] += boundary[
+                    "boundary_precision"
+                ]
+                current["boundary_recall_sum"] += boundary["boundary_recall"]
+                current["boundary_f1_sum"] += boundary["boundary_f1"]
 
     if sample_count == 0:
         raise ValueError("threshold calibration requires at least one sample")
@@ -212,7 +273,12 @@ def calibrate_threshold(
                 "image_level_specificity": _safe_div(
                     image_tn, image_tn + image_fp
                 ),
-                **counts,
+                "boundary_precision": (
+                    counts["boundary_precision_sum"] / sample_count
+                ),
+                "boundary_recall": counts["boundary_recall_sum"] / sample_count,
+                "boundary_f1": counts["boundary_f1_sum"] / sample_count,
+                **{field: counts[field] for field in count_fields},
             }
         )
 
@@ -237,6 +303,7 @@ def calibrate_threshold(
             key=lambda row: (
                 row["image_level_specificity"],
                 row["crack_dice"],
+                row["boundary_f1"],
                 row["threshold"],
             ),
         )
@@ -248,6 +315,7 @@ def calibrate_threshold(
                 row["image_level_recall"],
                 row["image_level_specificity"],
                 row["crack_dice"],
+                row["boundary_f1"],
                 row["threshold"],
             ),
         )
@@ -264,9 +332,10 @@ def calibrate_threshold(
         "recall_constraint_met": constraint_met,
         "image_level_minimum_pixels": image_level_minimum_pixels,
         "minimum_component_pixels": minimum_component_pixels,
+        "boundary_tolerance": boundary_tolerance,
         "selection_policy": (
             "maximize image specificity subject to minimum image recall; "
-            "tie-break by crack Dice and higher threshold"
+            "tie-break by crack Dice, boundary F1, and higher threshold"
         ),
         "curve": curve,
         "elapsed_seconds": time.perf_counter() - started,

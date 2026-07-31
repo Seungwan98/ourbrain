@@ -1,0 +1,18 @@
+# Copy this file to D:\ourbrain\artifacts\pilot_inputs.txt.
+# Enter one absolute BMP path per line. Blank lines and lines starting with # are ignored.
+# Keep at least one representative image from each category below.
+
+# Clear crack
+D:\path\to\clear-crack.bmp
+
+# Thin or faint crack
+D:\path\to\thin-crack.bmp
+
+# Normal tunnel wall
+D:\path\to\normal-wall.bmp
+
+# Joint, cable, or bolt-heavy scene
+D:\path\to\joint-and-cable.bmp
+
+# Stain, leakage, or strong reflection
+D:\path\to\stain-and-reflection.bmp

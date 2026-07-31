@@ -52,7 +52,18 @@ def test_evaluate_dataset_uses_inference_component_filter() -> None:
     labels = torch.zeros(4, 4, dtype=torch.long)
     pixels = torch.zeros(3, 4, 4)
     pixels[:, 1, 1] = 1
-    dataset = [{"pixel_values": pixels, "labels": labels}]
+    dataset = [
+        {
+            "pixel_values": pixels,
+            "labels": labels,
+            "image_path": "normal-hard-negative.png",
+            "group_id": "normal-001",
+            "metadata": {
+                "split": "test",
+                "source_kind": "reviewed_negative",
+            },
+        }
+    ]
 
     unfiltered = evaluate_dataset(
         IdentityLogitModel(),
@@ -69,8 +80,23 @@ def test_evaluate_dataset_uses_inference_component_filter() -> None:
 
     assert unfiltered["fp"] == 1
     assert unfiltered["image_level_specificity"] == 0.0
+    assert unfiltered["error_case_count"] == 1
+    assert unfiltered["error_cases"][0] == {
+        "sample_index": 0,
+        "image_path": "normal-hard-negative.png",
+        "mask_path": None,
+        "group_id": "normal-001",
+        "split": "test",
+        "source_kind": "reviewed_negative",
+        "error_types": ["image_false_positive"],
+        "false_positive_pixels": 1,
+        "false_negative_pixels": 0,
+        "crack_dice": 0.0,
+        "boundary_f1": 0.0,
+    }
     assert filtered["fp"] == 0
     assert filtered["image_level_specificity"] == 1.0
+    assert filtered["error_case_count"] == 0
 
 
 def test_calibrate_threshold_preserves_required_image_recall(tmp_path) -> None:

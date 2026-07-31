@@ -5,6 +5,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .omx/
+.env
+.env.*
+!.env.example
 
 artifacts/*
 !artifacts/.gitkeep
@@ -15,5 +18,9 @@ data/*
 outputs/*
 !outputs/.gitkeep
 build/
-.env*.local
+runs/
+*.safetensors
+*.pth
+*.pt
+*.ckpt
 .vercel

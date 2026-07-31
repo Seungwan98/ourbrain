@@ -3,6 +3,15 @@
 터널 스캔 이미지에서 균열을 픽셀 단위로 검출하고, 대형 BMP 원본에 대한
 균열 유무와 위치를 출력하는 Hugging Face 기반 파인튜닝 프로젝트입니다.
 
+## 프로젝트 문서
+
+프로젝트 현황, 구조, 데이터, v0/v0.1 실험 결과와 운영 절차는
+[`docs/README.md`](docs/README.md)에서 확인합니다.
+
+2026-07-31 기준 v0.1 실험은 정상 조기 종료됐지만 validation crack Dice가
+v0 기준선보다 0.73% 낮았습니다. 현재 기준 체크포인트는 v0 epoch 16이며,
+정상/hard-negative 검수는 1/200만 완료돼 운영 배포 가능한 최종 모델은 아직 없습니다.
+
 ## 안전 원칙
 
 - `/Volumes/새 볼륨`의 원본은 읽기 전용 입력으로만 사용합니다.
@@ -66,35 +75,41 @@ uv run ourbrain-cv import-negatives \
   --output artifacts/manifest_with_negatives.csv
 
 # 5. 학습: train/val/test 각각에 검수된 정상 패치가 없으면 자동 중단
-uv run ourbrain-cv train --config configs/upernet_swin_tiny.yaml
+uv run ourbrain-cv training-preflight \
+  --config configs/v0_2_a_baseline_with_negatives.yaml \
+  --require-local-checkpoint \
+  --verify-files
+
+uv run ourbrain-cv train \
+  --config configs/v0_2_a_baseline_with_negatives.yaml
 
 # 6. val 그룹에서 운영 임계값 선택 (test는 보정에 사용하지 않음)
 uv run ourbrain-cv calibrate \
-  --config configs/upernet_swin_tiny.yaml \
-  --checkpoint checkpoints/upernet-swin-tiny \
+  --config configs/v0_2_a_baseline_with_negatives.yaml \
+  --checkpoint checkpoints/v0.2-a-baseline-with-negatives \
   --minimum-image-recall 0.95 \
   --output artifacts/threshold_calibration.json
 
 # 7. 고정된 임계값으로 보류된 test 그룹을 한 번 평가
 uv run ourbrain-cv evaluate \
-  --config configs/upernet_swin_tiny.yaml \
-  --checkpoint checkpoints/upernet-swin-tiny \
+  --config configs/v0_2_a_baseline_with_negatives.yaml \
+  --checkpoint checkpoints/v0.2-a-baseline-with-negatives \
   --calibration artifacts/threshold_calibration.json \
   --split test \
   --output artifacts/test_metrics.json
 
 # 8. test 평가와 같은 고정 임계값으로 대형 BMP 추론
 uv run ourbrain-cv infer \
-  --config configs/upernet_swin_tiny.yaml \
-  --checkpoint checkpoints/upernet-swin-tiny \
+  --config configs/v0_2_a_baseline_with_negatives.yaml \
+  --checkpoint checkpoints/v0.2-a-baseline-with-negatives \
   --calibration artifacts/threshold_calibration.json \
   --input '/Volumes/새 볼륨/bmp/0003.bmp' \
   --output outputs/0003
 ```
 
 `calibrate`는 val의 이미지 단위 민감도가 지정값(기본 95%) 이상인 후보 중
-특이도가 가장 높은 임계값을 선택합니다. 동률이면 균열 Dice와 높은 임계값
-순으로 결정합니다. 검수된 정상과 균열 이미지가 val에 모두 없으면 본 보정을
+특이도가 가장 높은 임계값을 선택합니다. 동률이면 균열 Dice, boundary F1,
+높은 임계값 순으로 결정합니다. 검수된 정상과 균열 이미지가 val에 모두 없으면 본 보정을
 중단합니다. 생성 JSON에는 체크포인트·manifest·후처리 설정 출처가 기록되며,
 다른 체크포인트나 `minimum_component_pixels` 설정에 잘못 재사용하면
 `evaluate`/`infer`가 중단됩니다. test는 임계값 선택에 사용하지 않고, 선택이
@@ -106,6 +121,11 @@ uv run ourbrain-cv infer \
 `minimum_component_pixels`, `image_level_minimum_pixels`를 동일하게 적용하므로
 보고된 이미지 단위 민감도·특이도는 실제 대형 이미지 판정과 같은 후처리
 기준을 사용합니다.
+
+`train`과 `training-preflight`는 반복 실험을 위해 `--model-checkpoint`,
+`--output-dir`, `--manifest` override를 지원합니다. `calibrate`, `evaluate`,
+`infer`도 `--manifest`를 지원하므로 hard-negative 라운드가 원본 config를
+수정하거나 이전 체크포인트를 덮어쓰지 않습니다.
 
 현재 생성된 `data/negative_review/negative_review.csv`에는 전체 원본 86개에서
 표본화한 후보 200개와 contact sheet 13장이 준비되어 있습니다. 자동 라벨은
@@ -150,7 +170,8 @@ set -a
 source .env.remote-review.local
 set +a
 uv run ourbrain-cv remote-review-status \
-  --url https://ourbrain-tunnel-review.vercel.app
+  --url https://ourbrain-tunnel-review.vercel.app \
+  --summary-only
 ```
 
 완료된 결과를 내려받아 기존 strict import에 연결:

@@ -10,6 +10,7 @@ from PIL import Image
 from ourbrain_cv.manifest import MANIFEST_FIELDS, read_manifest, write_manifest
 from ourbrain_cv.reviews import (
     deterministic_split,
+    file_sha256,
     import_reviewed_negatives,
     restore_spreadsheet_safe_cell,
     review_audit_path,
@@ -26,6 +27,33 @@ def test_restore_spreadsheet_safe_cell_only_unescapes_formula_prefixes() -> None
     assert restore_spreadsheet_safe_cell("'+SUM(1,2)") == "+SUM(1,2)"
     assert restore_spreadsheet_safe_cell("'normal") == "'normal"
     assert restore_spreadsheet_safe_cell("negative") == "negative"
+
+
+def test_import_reviewed_negatives_accepts_utf8_bom_export(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate.png"
+    Image.new("RGB", (8, 8), "gray").save(candidate)
+    base = tmp_path / "base.csv"
+    write_manifest([], base)
+    review = tmp_path / "review.csv"
+    with review.open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["candidate_path", "group_id", "review_label"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "candidate_path": str(candidate),
+                "group_id": "bom-group",
+                "review_label": "negative",
+            }
+        )
+
+    output = tmp_path / "output.csv"
+    result = import_reviewed_negatives(review, base, output)
+
+    assert result["added_negatives"] == 1
+    assert read_manifest(output)[0]["image_path"] == str(candidate.resolve())
 
 
 def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Path) -> None:
@@ -98,7 +126,40 @@ def test_import_reviewed_negatives_only_adds_explicit_normal_labels(tmp_path: Pa
         "unreviewed": 0,
         "invalid": 0,
     }
+    assert audit["reviewed_negative_sha256"] == {
+        str(accepted.resolve()): file_sha256(accepted)
+    }
     assert validate_review_audit(output)["output_manifest"] == str(output.resolve())
+
+
+def test_review_audit_rejects_reviewed_negative_image_tampering(
+    tmp_path: Path,
+) -> None:
+    candidate = tmp_path / "candidate.png"
+    Image.new("RGB", (8, 8), "gray").save(candidate)
+    manifest = tmp_path / "manifest.csv"
+    write_manifest([], manifest)
+    review = tmp_path / "review.csv"
+    with review.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["candidate_path", "group_id", "review_label"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "candidate_path": str(candidate),
+                "group_id": "001",
+                "review_label": "negative",
+            }
+        )
+    output = tmp_path / "with-negatives.csv"
+    import_reviewed_negatives(review, manifest, output)
+
+    Image.new("RGB", (8, 8), "red").save(candidate)
+
+    with pytest.raises(RuntimeError, match="image changed after import"):
+        validate_review_audit(output)
 
 
 def test_import_reviewed_negatives_rejects_partial_review(tmp_path: Path) -> None:
@@ -193,3 +254,77 @@ def test_import_reviewed_negatives_restores_spreadsheet_safe_candidate_path(
     assert summary["added_negatives"] == 1
     assert row["image_path"] == str(candidate.resolve())
     assert row["group_id"] == "=group"
+
+
+def test_repeated_import_validates_and_records_prior_review_provenance(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "base.csv"
+    write_manifest([], base)
+
+    def make_review(name: str) -> Path:
+        candidate = tmp_path / f"{name}.png"
+        Image.new("RGB", (8, 8), "gray").save(candidate)
+        review = tmp_path / f"{name}.csv"
+        with review.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=["candidate_path", "group_id", "review_label"],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "candidate_path": str(candidate),
+                    "group_id": name,
+                    "review_label": "negative",
+                }
+            )
+        return review
+
+    first = tmp_path / "first-manifest.csv"
+    import_reviewed_negatives(make_review("first"), base, first)
+    second = tmp_path / "second-manifest.csv"
+    import_reviewed_negatives(make_review("second"), first, second)
+
+    audit = validate_review_audit(second)
+    assert audit["base_manifest_review_audit"] == str(
+        review_audit_path(first)
+    )
+    assert audit["base_manifest_review_audit_sha256"] == file_sha256(
+        review_audit_path(first)
+    )
+    assert audit["cumulative_reviewed_negatives"] == 2
+    assert len(audit["reviewed_negative_sha256"]) == 2
+
+
+def test_repeated_import_rejects_tampered_prior_review_manifest(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / "base.csv"
+    write_manifest([], base)
+    candidate = tmp_path / "candidate.png"
+    Image.new("RGB", (8, 8), "gray").save(candidate)
+    review = tmp_path / "review.csv"
+    with review.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["candidate_path", "group_id", "review_label"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "candidate_path": str(candidate),
+                "group_id": "group",
+                "review_label": "negative",
+            }
+        )
+    first = tmp_path / "first.csv"
+    import_reviewed_negatives(review, base, first)
+    first.write_text(first.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="changed after reviewed-negative import"):
+        import_reviewed_negatives(
+            review,
+            first,
+            tmp_path / "second.csv",
+        )

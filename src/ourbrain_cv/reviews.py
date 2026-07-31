@@ -91,6 +91,32 @@ def validate_review_audit(manifest_csv: str | Path) -> dict[str, Any]:
             "Training manifest changed after reviewed-negative import; "
             "run import-negatives again."
         )
+    reviewed_negative_rows = [
+        row
+        for row in read_manifest(manifest_path)
+        if row.get("source_kind", "").strip() == "reviewed_negative"
+    ]
+    expected_negative_hashes = audit.get("reviewed_negative_sha256")
+    if not isinstance(expected_negative_hashes, dict) or len(
+        expected_negative_hashes
+    ) != len(reviewed_negative_rows):
+        raise RuntimeError(
+            "Review provenance does not contain every reviewed-negative image hash; "
+            "run import-negatives again."
+        )
+    for row in reviewed_negative_rows:
+        image_path = str(Path(row["image_path"]).expanduser().resolve())
+        expected_image_digest = expected_negative_hashes.get(image_path)
+        candidate = Path(image_path)
+        if (
+            not expected_image_digest
+            or not candidate.is_file()
+            or file_sha256(candidate) != expected_image_digest
+        ):
+            raise RuntimeError(
+                "A reviewed-negative image changed after import; "
+                f"run import-negatives again: {candidate}"
+            )
     return audit
 
 
@@ -117,7 +143,15 @@ def import_reviewed_negatives(
         raise ValueError("review, base manifest, output manifest, and audit paths must differ")
 
     existing = read_manifest(manifest_path)
-    with review_path.open(newline="", encoding="utf-8") as handle:
+    existing_reviewed_negatives = sum(
+        row.get("source_kind", "").strip() == "reviewed_negative"
+        for row in existing
+    )
+    base_review_audit_path = review_audit_path(manifest_path)
+    base_review_audit = None
+    if existing_reviewed_negatives:
+        base_review_audit = validate_review_audit(manifest_path)
+    with review_path.open(newline="", encoding="utf-8-sig") as handle:
         review_rows = list(csv.DictReader(handle))
 
     # A new import attempt supersedes any previous result at this output path.
@@ -136,6 +170,11 @@ def import_reviewed_negatives(
     skipped_missing = 0
     skipped_duplicate = 0
     negative_decisions = 0
+    reviewed_negative_hashes: dict[str, str] = {}
+    if base_review_audit is not None:
+        reviewed_negative_hashes.update(
+            base_review_audit["reviewed_negative_sha256"]
+        )
 
     for review in review_rows:
         label = restore_spreadsheet_safe_cell(
@@ -188,6 +227,7 @@ def import_reviewed_negatives(
                 "source_kind": "reviewed_negative",
             }
         )
+        reviewed_negative_hashes[str(candidate)] = file_sha256(candidate)
         existing_paths.add(str(candidate))
 
     review_complete = (
@@ -210,6 +250,14 @@ def import_reviewed_negatives(
         "review_csv_sha256": file_sha256(review_path),
         "base_manifest": str(manifest_path),
         "base_manifest_sha256": file_sha256(manifest_path),
+        "base_manifest_review_audit": (
+            str(base_review_audit_path) if base_review_audit is not None else None
+        ),
+        "base_manifest_review_audit_sha256": (
+            file_sha256(base_review_audit_path)
+            if base_review_audit is not None
+            else None
+        ),
         "output_manifest": str(output_path),
         "output_manifest_sha256": file_sha256(output_path),
         "review_rows": (
@@ -223,6 +271,10 @@ def import_reviewed_negatives(
         },
         "invalid_label_values": dict(invalid_label_values),
         "added_negatives": len(added),
+        "cumulative_reviewed_negatives": (
+            existing_reviewed_negatives + len(added)
+        ),
+        "reviewed_negative_sha256": reviewed_negative_hashes,
         "missing_negative_files": skipped_missing,
         "duplicate_negatives": skipped_duplicate,
     }
