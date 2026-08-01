@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-31",
+  "generated_at": "2026-08-02",
   "project": "ourbrain-tunnel-crack-cv",
   "training_machine": {
-    "os": "Windows 10",
+    "os": "Windows 11 23H2",
     "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU",
     "gpu_memory_mib": 4096
   },
@@ -191,6 +191,159 @@
       },
       "held_out_test_opened": false,
       "limitation": "No human-reviewed normal images were used. This run cannot estimate operational false-positive performance."
+    },
+    {
+      "run_id": "v0.3-a-upernet-swin-tiny-positive-only",
+      "development_only": true,
+      "production_eligible": false,
+      "positive_only": true,
+      "held_out_test_opened": false,
+      "training_source_commit": "3d8d725",
+      "architecture": "upernet",
+      "checkpoint_source": "openmmlab/upernet-swin-tiny",
+      "device": "cuda",
+      "started_at_utc": "2026-08-01T11:12:29.0343738Z",
+      "finished_at_utc": "2026-08-01T13:08:29.7565604Z",
+      "maximum_epochs": 30,
+      "completed_epochs": 30,
+      "early_stopped": false,
+      "best_epoch": 27,
+      "best_training_metrics": {
+        "val_crack_dice": 0.2472300415887204,
+        "val_recall": 0.5680464695394442,
+        "val_boundary_f1": 0.811913110763945
+      },
+      "standardized_validation_metrics": {
+        "samples": 221,
+        "crack_dice": 0.25057074789858313,
+        "crack_iou": 0.14322999778218937,
+        "precision": 0.16158333791015994,
+        "recall": 0.5577180289195708,
+        "boundary_f1": 0.8094879977024892,
+        "samples_per_second": 5.844594650700499,
+        "metrics_sha256": "b75a797275afb35a1e70e54f6704e4d8cd0e0d6a2a44e3c3df254fd09c3da172"
+      },
+      "peak_training_cuda_memory_bytes": 2029346816,
+      "checkpoint": {
+        "windows_path": "D:\\ourbrain\\runs\\v0.3-a-upernet-swin-tiny-positive-only\\checkpoint",
+        "model_sha256": "ed5c4d36070e5864426dbebadd9ef5016b672efd7e084721272cb666f4ce799d",
+        "config_sha256": "22670da266b6e123f5bccd1b3e4cd298cd58804f8eb038845b19372ff71c2d00",
+        "history_sha256": "236e91a0f13f7ad09aa6094de37599b009fb28bd543dd8da3b7641d258effcfa",
+        "training_config_sha256": "8d1c9ab164079e6b0c4964d96ce06ad076a87cfd09306ca8038d5543d8381561",
+        "model_config_sha256": "c3890559679c869f6b189696e36c21c600e256e59e9bf13afb6b3d641deef2e1",
+        "mac_backup_verified": false,
+        "note": "The checkpoint remains on the Windows GPU machine by design."
+      },
+      "manifest": {
+        "windows_path": "D:\\ourbrain\\artifacts\\manifest_windows.csv",
+        "sha256": "ea2089a36daea891b7cf9ee55b6836c3f27c17e6c91f31c1726ab1b934545430",
+        "rows": 1223,
+        "groups": 89,
+        "reviewed_negative_rows": 0
+      },
+      "limitation": "No human-reviewed normal images were used; this run cannot estimate operational false-positive specificity or qualify a production model."
+    },
+    {
+      "run_id": "v0.3-b-segformer-b1-positive-only",
+      "development_only": true,
+      "production_eligible": false,
+      "positive_only": true,
+      "held_out_test_opened": false,
+      "training_source_commit": "3d8d725",
+      "architecture": "segformer",
+      "checkpoint_source": "nvidia/segformer-b1-finetuned-ade-512-512",
+      "device": "cuda",
+      "started_at_utc": "2026-08-01T13:08:29.7604588Z",
+      "finished_at_utc": "2026-08-01T13:55:51.4261990Z",
+      "maximum_epochs": 30,
+      "completed_epochs": 26,
+      "early_stopped": true,
+      "best_epoch": 20,
+      "best_training_metrics": {
+        "val_crack_dice": 0.2354231930644088,
+        "val_recall": 0.5115634911350406,
+        "val_boundary_f1": 0.795869977604986
+      },
+      "standardized_validation_metrics": {
+        "samples": 221,
+        "crack_dice": 0.23712313043564864,
+        "crack_iou": 0.13450918469095768,
+        "precision": 0.1552703487045044,
+        "recall": 0.5014902109464683,
+        "boundary_f1": 0.7899665225016697,
+        "samples_per_second": 11.271381025557185,
+        "metrics_sha256": "51d99380da60bdaf184548ded6f81e6368e5e019fc5fb9061cc8d0b528a52c07"
+      },
+      "peak_training_cuda_memory_bytes": 676568064,
+      "checkpoint": {
+        "windows_path": "D:\\ourbrain\\runs\\v0.3-b-segformer-b1-positive-only\\checkpoint",
+        "model_sha256": "b84f64c6479acf88af202fb716d4de0f91023a2ab736c2e816812afddb6abf8f",
+        "config_sha256": "69dca3112f7a486b45104e863124192a56c5eca18132d4404b2d2809f29bdb35",
+        "history_sha256": "27deeb44d71efc5ae985140bd500d23f2456423b7c1eb8e27e681f5d9339ce80",
+        "training_config_sha256": "d11f024d128bf4a12169fd45476662818909dfb10d36d7120765949f71308812",
+        "model_config_sha256": "f35ee527d1f28f34707e6dfd19a51f03ad17a846180248b505ca5fe4c46c389f",
+        "mac_backup_verified": false,
+        "note": "The checkpoint remains on the Windows GPU machine by design."
+      },
+      "manifest": {
+        "windows_path": "D:\\ourbrain\\artifacts\\manifest_windows.csv",
+        "sha256": "ea2089a36daea891b7cf9ee55b6836c3f27c17e6c91f31c1726ab1b934545430",
+        "rows": 1223,
+        "groups": 89,
+        "reviewed_negative_rows": 0
+      },
+      "limitation": "No human-reviewed normal images were used; this run cannot estimate operational false-positive specificity or qualify a production model."
+    },
+    {
+      "run_id": "v0.3-c-segformer-b2-positive-only",
+      "development_only": true,
+      "production_eligible": false,
+      "positive_only": true,
+      "held_out_test_opened": false,
+      "training_source_commit": "3d8d725",
+      "architecture": "segformer",
+      "checkpoint_source": "nvidia/segformer-b2-finetuned-ade-512-512",
+      "device": "cuda",
+      "started_at_utc": "2026-08-01T13:55:51.4291647Z",
+      "finished_at_utc": "2026-08-01T15:18:51.5444972Z",
+      "maximum_epochs": 30,
+      "completed_epochs": 30,
+      "early_stopped": false,
+      "best_epoch": 26,
+      "best_training_metrics": {
+        "val_crack_dice": 0.2449756085500216,
+        "val_recall": 0.5512925703452366,
+        "val_boundary_f1": 0.8211151563669294
+      },
+      "standardized_validation_metrics": {
+        "samples": 221,
+        "crack_dice": 0.24419231307973,
+        "crack_iou": 0.13907691309180298,
+        "precision": 0.15763081751753225,
+        "recall": 0.5416153254768148,
+        "boundary_f1": 0.815837611189142,
+        "samples_per_second": 8.368281574366527,
+        "metrics_sha256": "82a6011e38f2695daeef53c1dd39a0c7c403602e90fff515757606a966a490b4"
+      },
+      "peak_training_cuda_memory_bytes": 1437128704,
+      "checkpoint": {
+        "windows_path": "D:\\ourbrain\\runs\\v0.3-c-segformer-b2-positive-only\\checkpoint",
+        "model_sha256": "c2ecbf69b1a386cf51879ee43148e048e432ce6957fd355bcac43e681363be4e",
+        "config_sha256": "7e4464594a7edde03d88550779a02eb1e10c0d3b6d3b4150844dd895b642cc65",
+        "history_sha256": "e519259ba73ac794cf5c482f27fad4c7dc6dbf632ba2c563c8e6b42aedddcda1",
+        "training_config_sha256": "f8df2b0a718fbe41fe3fb2d393415ab4f1a7374583b960dca44eeae52a3a1185",
+        "model_config_sha256": "7cd120a64affc181d6fb3839b2cb3fd1a59fff079766d1ea5461c8577a7603f8",
+        "mac_backup_verified": false,
+        "note": "The checkpoint remains on the Windows GPU machine by design."
+      },
+      "manifest": {
+        "windows_path": "D:\\ourbrain\\artifacts\\manifest_windows.csv",
+        "sha256": "ea2089a36daea891b7cf9ee55b6836c3f27c17e6c91f31c1726ab1b934545430",
+        "rows": 1223,
+        "groups": 89,
+        "reviewed_negative_rows": 0
+      },
+      "limitation": "No human-reviewed normal images were used; this run cannot estimate operational false-positive specificity or qualify a production model."
     }
   ],
   "development_benchmarks": [
@@ -484,6 +637,146 @@
         "Image specificity is not an operational false-positive estimate.",
         "The held-out test split was not opened.",
         "This benchmark cannot promote a model to production."
+      ]
+    },
+    {
+      "benchmark_id": "v0-v0.3-architecture-sweep-validation-2026-08-02",
+      "development_only": true,
+      "production_eligible": false,
+      "positive_only": true,
+      "evaluation_split": "val",
+      "held_out_test_opened": false,
+      "samples": 221,
+      "validation_groups": 13,
+      "threshold": 0.5,
+      "boundary_tolerance": 2,
+      "bootstrap_iterations": 10000,
+      "bootstrap_seed": 42,
+      "manifest_sha256": "ea2089a36daea891b7cf9ee55b6836c3f27c17e6c91f31c1726ab1b934545430",
+      "reviewed_negative_rows": 0,
+      "retained_model": "v0-positive-only",
+      "decision": "Retain v0-positive-only. Every v0.3 candidate had lower Dice, and every paired group-bootstrap interval was strictly negative.",
+      "training_source_commit": "3d8d725",
+      "benchmark_recovery_commit": "4e7d992",
+      "windows_completion_path": "D:\\ourbrain\\runs\\v0.3-model-sweep\\benchmark\\benchmark_complete.json",
+      "local_completion_sha256": "ca607ae46130131bc674ea38e0a2e5386c9a387331c03fda4e247471314d9a29",
+      "local_selection_sha256": "9668896812d43fe16dc8a37d2b8d154af68bb7d0c8253ab4c158602476946b9e",
+      "local_training_completion_sha256": "cebbbd869defc7ff39d8aac36046625306cfae6fbbc4d0f3065ba8196229f708",
+      "models": [
+        {
+          "id": "v0-positive-only",
+          "crack_dice": 0.2576088702415661,
+          "recall": 0.5573915516097437,
+          "boundary_f1": 0.8324236998228084,
+          "role": "retained_baseline"
+        },
+        {
+          "id": "v0.3-a-upernet-swin-tiny-positive-only",
+          "architecture": "upernet",
+          "checkpoint_source": "openmmlab/upernet-swin-tiny",
+          "crack_dice": 0.25057074789858313,
+          "crack_iou": 0.14322999778218937,
+          "precision": 0.16158333791015994,
+          "recall": 0.5577180289195708,
+          "boundary_f1": 0.8094879977024892,
+          "samples_per_second": 5.844594650700499,
+          "peak_training_cuda_memory_bytes": 2029346816,
+          "dice_difference_from_v0": -0.007038122342982955,
+          "paired_group_bootstrap_95_ci": [
+            -0.014004951217019874,
+            -0.006208132921672466
+          ],
+          "recall_drop_from_v0": -0.0003264773098270446,
+          "development_gate_passed": false,
+          "metrics_sha256": "b75a797275afb35a1e70e54f6704e4d8cd0e0d6a2a44e3c3df254fd09c3da172"
+        },
+        {
+          "id": "v0.3-b-segformer-b1-positive-only",
+          "architecture": "segformer",
+          "checkpoint_source": "nvidia/segformer-b1-finetuned-ade-512-512",
+          "crack_dice": 0.23712313043564864,
+          "crack_iou": 0.13450918469095768,
+          "precision": 0.1552703487045044,
+          "recall": 0.5014902109464683,
+          "boundary_f1": 0.7899665225016697,
+          "samples_per_second": 11.271381025557185,
+          "peak_training_cuda_memory_bytes": 676568064,
+          "dice_difference_from_v0": -0.020485739805917447,
+          "paired_group_bootstrap_95_ci": [
+            -0.026423096036019694,
+            -0.01735900830692301
+          ],
+          "recall_drop_from_v0": 0.055901340663275456,
+          "development_gate_passed": false,
+          "metrics_sha256": "51d99380da60bdaf184548ded6f81e6368e5e019fc5fb9061cc8d0b528a52c07"
+        },
+        {
+          "id": "v0.3-c-segformer-b2-positive-only",
+          "architecture": "segformer",
+          "checkpoint_source": "nvidia/segformer-b2-finetuned-ade-512-512",
+          "crack_dice": 0.24419231307973,
+          "crack_iou": 0.13907691309180298,
+          "precision": 0.15763081751753225,
+          "recall": 0.5416153254768148,
+          "boundary_f1": 0.815837611189142,
+          "samples_per_second": 8.368281574366527,
+          "peak_training_cuda_memory_bytes": 1437128704,
+          "dice_difference_from_v0": -0.013416557161836068,
+          "paired_group_bootstrap_95_ci": [
+            -0.018168899648386506,
+            -0.00839413464791354
+          ],
+          "recall_drop_from_v0": 0.01577622613292895,
+          "development_gate_passed": false,
+          "metrics_sha256": "82a6011e38f2695daeef53c1dd39a0c7c403602e90fff515757606a966a490b4"
+        }
+      ],
+      "large_bmp_smoke_test": {
+        "input": "D:\\ourbrain-data\\performance-benchmark\\Tube_009_1.bmp",
+        "input_sha256": "a7a4946d4dad421ee1c209f9ab20eedb14c89219be72588a3a87fd2c2fd99623",
+        "ground_truth_available": false,
+        "models": [
+          {
+            "id": "v0.3-a-upernet-swin-tiny-positive-only",
+            "elapsed_seconds": 21.151,
+            "megapixels": 17.98,
+            "megapixels_per_second": 0.85,
+            "crack_ratio": 0.0021626251390433815,
+            "component_count": 308,
+            "presence": true,
+            "quality_gate_passed": true,
+            "overlay_sha256": "30429a56141103fcaadb8d18abd3098b8218bbc0ffcecc1ce0597de116f02dc7"
+          },
+          {
+            "id": "v0.3-b-segformer-b1-positive-only",
+            "elapsed_seconds": 10.077,
+            "megapixels": 17.98,
+            "megapixels_per_second": 1.784,
+            "crack_ratio": 0.002793604004449388,
+            "component_count": 515,
+            "presence": true,
+            "quality_gate_passed": true,
+            "overlay_sha256": "054e40dd51e980d21dc0a3a26a77f4350054160647075563a23d67f60e9e46bf"
+          },
+          {
+            "id": "v0.3-c-segformer-b2-positive-only",
+            "elapsed_seconds": 18.116,
+            "megapixels": 17.98,
+            "megapixels_per_second": 0.993,
+            "crack_ratio": 0.002117463848720801,
+            "component_count": 494,
+            "presence": true,
+            "quality_gate_passed": true,
+            "overlay_sha256": "c6431d2aaa9b401e3a0b23952821287804a2735c7e9c22a0fa3b9db31b6d4e1a"
+          }
+        ],
+        "limitation": "No trusted ground-truth mask exists for this BMP; outputs are smoke diagnostics, not accuracy measurements."
+      },
+      "limitations": [
+        "No human-reviewed normal images were used.",
+        "Operational false-positive specificity is unavailable.",
+        "The held-out test split was not opened.",
+        "This result cannot promote a model to production."
       ]
     }
   ]

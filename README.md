@@ -5,11 +5,12 @@
 
 ## 프로젝트 문서
 
-프로젝트 현황, 구조, 데이터, v0/v0.1 실험 결과와 운영 절차는
+프로젝트 현황, 구조, 데이터, v0~v0.3 실험 결과와 운영 절차는
 [`docs/README.md`](docs/README.md)에서 확인합니다.
 
-2026-07-31 기준 v0.1 실험은 정상 조기 종료됐지만 validation crack Dice가
-v0 기준선보다 0.73% 낮았습니다. 현재 기준 체크포인트는 v0 epoch 16이며,
+2026-08-02 기준 UPerNet과 SegFormer-B1/B2를 같은 조건으로 비교한 v0.3까지
+완료했습니다. 세 후보 모두 validation Dice와 paired group-bootstrap gate에서
+v0를 넘지 못해 현재 기준 체크포인트는 v0 epoch 16으로 유지합니다.
 정상/hard-negative 검수는 1/200만 완료돼 운영 배포 가능한 최종 모델은 아직 없습니다.
 
 ## 안전 원칙

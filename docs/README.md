@@ -1,6 +1,6 @@
 # OurBrain Tunnel Crack CV 문서
 
-최종 갱신: 2026-07-31
+최종 갱신: 2026-08-02
 
 이 디렉터리는 터널 스캔 이미지의 균열을 검출하는 OurBrain CV 프로젝트의
 데이터, 설계, 학습 결과, 운영 절차와 다음 단계를 설명합니다.
@@ -16,6 +16,7 @@
 | 17.98MP BMP 타일 추론 smoke benchmark | 완료 |
 | v0.2 controlled augmentation 구현·실이미지 확인 | 완료 |
 | v0.2-dev positive-only augmentation A/B·benchmark | 완료 |
+| v0.3 UPerNet/SegFormer-B1/B2 모델 비교·benchmark | 완료, 기존 v0 유지 |
 | 정상/hard-negative 후보 200장 생성 | 완료 |
 | 정상 후보 사람 검수 | **1/200, uncertain 1장, negative 0장, 199장 남음** |
 | 검수된 정상 데이터 포함 최종 학습 | 대기 |
@@ -29,6 +30,12 @@ v0 대비 paired bootstrap 구간이 0을 포함해 확실한 개선으로 판�
 현재 기준 체크포인트는 v0의 epoch 16으로 유지합니다. 이 평가는 검수 정상 데이터가
 없는 개발용 결과이며 held-out test는 열지 않았습니다. 자세한 수치는
 [학습 및 실험 결과](TRAINING_AND_RESULTS.md)를 참조하세요.
+
+v0.3에서는 동일한 augmentation·loss·30 epoch 예산으로 UPerNet-Swin-Tiny,
+SegFormer-B1, SegFormer-B2를 비교했습니다. validation Dice는 각각 `0.250571`,
+`0.237123`, `0.244192`로 모두 v0보다 낮았고, 13개 group paired bootstrap
+95% 구간도 모두 음수였습니다. SegFormer는 더 빠르고 메모리를 적게 사용했지만
+현재 데이터에서는 정확도 개선이 없어 모델 교체 후보에서 제외했습니다.
 
 ## 문서 목록
 

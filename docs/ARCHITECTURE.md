@@ -30,15 +30,20 @@ flowchart LR
 
 ## 모델
 
-- 기반 체크포인트: `openmmlab/upernet-swin-tiny`
-- 구조: UPerNet decoder + Swin-Tiny backbone
+- 현재 기준 체크포인트: `openmmlab/upernet-swin-tiny`
+- 지원 구조: UPerNet + Swin backbone, SegFormer
+- 검증한 대안 체크포인트:
+  - `nvidia/segformer-b1-finetuned-ade-512-512`
+  - `nvidia/segformer-b2-finetuned-ade-512-512`
 - 클래스: `background=0`, `crack=1`
 - 기본 학습/추론 입력: 512×512
 - 체크포인트 형식: Hugging Face config + `model.safetensors`
 
 `src/ourbrain_cv/modeling.py`가 모델 생성과 체크포인트 로드를 담당합니다.
-MPS에서 일부 adaptive pooling이 지원되지 않는 문제는 작은 feature map만 CPU로
-보내는 호환 계층으로 처리합니다.
+새 모델은 config의 `model.architecture`로 명시하며 저장된 Hugging Face 디렉터리는
+config에서 구조를 다시 판별할 수 있습니다. UPerNet을 MPS에서 실행할 때 일부
+adaptive pooling이 지원되지 않는 문제는 작은 feature map만 CPU로 보내는 호환
+계층으로 처리합니다.
 
 ## 코드 모듈
 
@@ -47,7 +52,7 @@ MPS에서 일부 adaptive pooling이 지원되지 않는 문제는 작은 featur
 | `manifest.py` | 이미지·마스크 페어 감사, group split, manifest 생성 |
 | `data.py` | 이미지·마스크 로드, 안전한 background/crack-centered crop |
 | `transforms.py` | 이미지와 마스크에 동일한 공간 변환 적용 |
-| `modeling.py` | UPerNet-Swin-Tiny 로드, MPS 호환, 체크포인트 복원 |
+| `modeling.py` | UPerNet/SegFormer 로드, UPerNet MPS 호환, 체크포인트 복원 |
 | `losses.py` | focal, Dice, Tversky, clDice, boundary loss |
 | `training.py` | 학습 loop, freeze/unfreeze, scheduler, early stopping, 저장 |
 | `metrics.py` | pixel confusion, Dice/IoU, boundary F1, 이미지 단위 지표 |

@@ -165,6 +165,31 @@ post-training task는 `training_complete.json`을 기다린 뒤 v0/v0.1/dev A/de
 추론을 실행합니다. 결과는
 `D:\ourbrain\runs\v0.2-dev-benchmark\benchmark_complete.json`에 기록됩니다.
 
+정상 200장 도착 전 모델 아키텍처만 비교하는 v0.3 개발 sweep:
+
+```powershell
+# manifest·CUDA·모델별 경로 확인
+powershell -ExecutionPolicy Bypass `
+  -File D:\ourbrain\scripts\windows\run_v0_3_model_sweep.ps1 `
+  -PreflightOnly
+
+# UPerNet, SegFormer-B1, SegFormer-B2를 순차 실행
+powershell -ExecutionPolicy Bypass `
+  -File D:\ourbrain\scripts\windows\launch_v0_3_model_sweep.ps1
+
+# 한 번만 출력하고 종료
+powershell -ExecutionPolicy Bypass `
+  -File D:\ourbrain\scripts\windows\watch_v0_3_model_sweep.ps1 `
+  -Once
+```
+
+runner는 세 CUDA 스모크를 통과한 후보만 전체 학습하고, validation 비교,
+13-group paired bootstrap 10,000회, 17.98MP BMP 추론까지 순차 실행합니다.
+이미 완료된 checkpoint는 해시를 확인한 뒤 재사용합니다. 후처리 중단으로
+`benchmark` 디렉터리만 불완전하면 해당 디렉터리를
+`benchmark.incomplete-<UTC timestamp>`로 보존하고 평가부터 다시 시작합니다.
+held-out test는 열지 않습니다.
+
 v0.2 A/B config는 동일한 controlled augmentation을 사용합니다.
 
 ```yaml

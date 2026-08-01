@@ -276,6 +276,82 @@ D:\ourbrain\runs\v0.2-dev-positive-only-ab\training_complete.json
 D:\ourbrain\runs\v0.2-dev-benchmark\benchmark_complete.json
 ```
 
+## v0.3: 모델 아키텍처 비교
+
+정상 200장이 도착하기 전 positive-only 데이터에서 모델 자체를 바꿨을 때의
+효과를 확인하기 위해 2026-08-01~02에 세 후보를 같은 조건으로 학습했습니다.
+이 실험은 최종 모델 선정이 아니라 개발 후보 제거를 위한 비교입니다.
+
+| ID | 아키텍처 | Hugging Face 시작 체크포인트 |
+|---|---|---|
+| A | UPerNet + Swin-Tiny | `openmmlab/upernet-swin-tiny` |
+| B | SegFormer-B1 | `nvidia/segformer-b1-finetuned-ade-512-512` |
+| C | SegFormer-B2 | `nvidia/segformer-b2-finetuned-ade-512-512` |
+
+세 후보는 모델 이외의 설정을 고정했습니다. 입력 512, batch 1, gradient
+accumulation 8, 최대 30 epoch, backbone freeze 2 epoch, AdamW
+`lr=6e-5`, `weight_decay=0.01`, cosine warmup 10%, FP16을 사용했습니다.
+augmentation은 flip, 밝기·대비·gamma, ±8° 회전, blur와 Gaussian noise를
+포함합니다. loss는 Focal 1.0 + Dice 1.0 + Boundary 0.25 + Tversky 0.25
+(`alpha=0.3`, `beta=0.7`) + clDice 0.15입니다.
+
+GPU 스모크 테스트는 각 모델을 backbone unfrozen 상태로 10 step 실행했습니다.
+
+| 모델 | 스모크 peak CUDA | 전체 학습 | best epoch | 전체 학습 peak CUDA |
+|---|---:|---:|---:|---:|
+| A UPerNet | 1.891GiB | 30/30 | 27 | 1.890GiB |
+| B SegFormer-B1 | 0.628GiB | 26/30, 조기 종료 | 20 | 0.630GiB |
+| C SegFormer-B2 | 1.337GiB | 30/30 | 26 | 1.338GiB |
+
+세 checkpoint를 기존 v0와 같은 validation 221장, threshold 0.5,
+boundary tolerance 2 조건으로 다시 평가했습니다.
+
+| 모델 | crack Dice | precision | recall | boundary F1 | 처리량 |
+|---|---:|---:|---:|---:|---:|
+| v0 기준 | **0.257609** | **0.167514** | 0.557392 | **0.832424** | 5.80장/초 |
+| A UPerNet | 0.250571 | 0.161583 | **0.557718** | 0.809488 | 5.84장/초 |
+| B SegFormer-B1 | 0.237123 | 0.155270 | 0.501490 | 0.789967 | **11.27장/초** |
+| C SegFormer-B2 | 0.244192 | 0.157631 | 0.541615 | 0.815838 | 8.37장/초 |
+
+validation의 13개 group을 단위로 seed 42, 10,000회 paired bootstrap을
+수행했습니다.
+
+| 후보 | Dice 차이(후보-v0) | group bootstrap 95% CI | v0 대비 recall 감소 | gate |
+|---|---:|---:|---:|---|
+| A | -0.007038 | [-0.014005, -0.006208] | -0.000326 | 실패 |
+| B | -0.020486 | [-0.026423, -0.017359] | 0.055901 | 실패 |
+| C | -0.013417 | [-0.018169, -0.008394] | 0.015776 | 실패 |
+
+세 신뢰구간이 모두 0보다 작아 새 후보의 Dice가 v0보다 낮다는 방향이
+일관됐습니다. B는 속도와 메모리 효율은 가장 좋았지만 Dice·recall·boundary
+F1이 모두 가장 낮았고 recall 감소 허용치 0.02도 넘었습니다. 따라서
+positive-only 기준 모델은 `v0-positive-only`를 유지합니다.
+
+17.98MP `Tube_009_1.bmp` 스모크 결과:
+
+| 모델 | 실행 시간 | 처리량 | 균열 예측 비율 | 연결 성분 |
+|---|---:|---:|---:|---:|
+| A UPerNet | 21.151초 | 0.850MP/초 | 0.21626% | 308 |
+| B SegFormer-B1 | **10.077초** | **1.784MP/초** | 0.27936% | 515 |
+| C SegFormer-B2 | 18.116초 | 0.993MP/초 | 0.21175% | 494 |
+
+세 결과 모두 파일·품질 gate를 통과했습니다. overlay 육안 검토에서 B는
+수평 표면 무늬와 이음부 검출이 A/C보다 많았습니다. 이 BMP에는 정답 mask가
+없으므로 속도와 출력 형상만 확인할 수 있고 정확도 비교 근거로는 사용하지
+않습니다.
+
+완료 결과:
+
+```text
+D:\ourbrain\runs\v0.3-model-sweep\training_complete.json
+D:\ourbrain\runs\v0.3-model-sweep\benchmark\benchmark_complete.json
+D:\ourbrain\runs\v0.3-model-sweep\benchmark\development_selection.json
+```
+
+검증 계약은 `development_only=true`, `production_eligible=false`,
+`positive_only=true`, `held_out_test_opened=false`입니다. 사람 검수 정상 데이터가
+없어 운영 false-positive specificity는 아직 측정할 수 없습니다.
+
 ## 재현 설정
 
 저장소 설정:
@@ -283,6 +359,9 @@ D:\ourbrain\runs\v0.2-dev-benchmark\benchmark_complete.json
 ```text
 configs/upernet_swin_tiny.yaml
 configs/v0_1_sampling_tversky_cldice.yaml
+configs/v0_3_a_upernet_swin_tiny_positive_only.yaml
+configs/v0_3_b_segformer_b1_positive_only.yaml
+configs/v0_3_c_segformer_b2_positive_only.yaml
 ```
 
 v0.1 실행 예:

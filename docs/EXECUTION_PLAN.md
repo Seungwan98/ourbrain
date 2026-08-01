@@ -26,6 +26,7 @@ specificity의 최종 합격 수치는 OurBrain 및 현장 담당자와 별도�
 | v0.1 best | epoch 1, validation crack Dice 0.254753 |
 | 동일 조건 재평가 | v0 Dice 0.257609, v0.1 Dice 0.253832, validation 221장 |
 | v0.2-dev 사전 결과 | dev A Dice 0.258174, dev B Dice 0.254591, test 미개봉 |
+| v0.3 모델 비교 | UPerNet 0.250571, SegFormer-B1 0.237123, B2 0.244192, 모두 gate 실패 |
 | 대형 BMP smoke benchmark | 17.98MP, 모델당 약 21.15초, 0.85MP/초 |
 | 현재 기준 모델 | v0 epoch 16 |
 | 정상 후보 검수 | 1/200 완료(uncertain 1, negative 0), 199장 남음 |
@@ -42,7 +43,7 @@ specificity의 최종 합격 수치는 OurBrain 및 현장 담당자와 별도�
 | P4 | A/B 전이라 최종 평가는 대기, v0/v0.1 개발 validation 재평가 완료 | 19개 threshold, audit/boundary 검증, test 1회·완료 파일 복구 검증 |
 | P5 | 최종 모델 전이라 대기, 기존 모델의 대형 BMP smoke benchmark 완료 | BMP runner·결과 집계·사람 검토표 생성 검증 |
 | P6 | 파일럿 오류 전이라 실행 대기 | crop→재검수→누적 manifest→재학습→동일 A/B 품질 게이트·재파일럿 구현 |
-| P7 | 데이터 기반 한계 미확인 | 지금은 실행하지 않음 |
+| P7 | positive-only UPerNet/SegFormer 비교 완료, 개선 없음 | 기존 v0 유지, 정상 데이터 이후에만 재검토 |
 
 ## 우선순위 요약
 
@@ -55,7 +56,7 @@ specificity의 최종 합격 수치는 OurBrain 및 현장 담당자와 별도�
 | P4 | validation 보정과 held-out test | 30~60분 | recall 0.95 조건 충족, test 보고서 생성 |
 | P5 | 대형 BMP 파일럿 | 1~2시간 | 현장 검토와 오류 목록 확보 |
 | P6 | hard-negative 반복 학습 | 데이터에 따라 반복 | 주요 오탐 감소 |
-| P7 | 모델 구조 변경 | 필요할 때만 | 기존 모델의 데이터 기반 한계 확인 |
+| P7 | 모델 구조 변경 | 개발 sweep 완료 | 정상 데이터 포함 기준선이 다시 한계에 도달할 때 재검토 |
 
 예상 시간은 현재 RTX 3050 Laptop GPU와 기존 실행 시간을 기준으로 한 대략적인
 작업 시간입니다. 사람 검수 속도와 대형 BMP 개수에 따라 달라집니다.
@@ -315,13 +316,21 @@ calibration한 뒤 같은 recall 0.95 → specificity → Dice → boundary F1 �
 
 ## P7. 모델 구조 변경
 
-P1~P6을 수행한 뒤에도 목표를 충족하지 못할 때만 진행합니다.
+사용자 요청에 따라 정상 200장 도착 전에 positive-only 개발 sweep을 먼저
+실행했습니다. 동일한 30 epoch recipe에서 UPerNet-Swin-Tiny, SegFormer-B1,
+SegFormer-B2를 비교했으나 validation Dice는 각각 0.250571, 0.237123,
+0.244192로 v0의 0.257609보다 낮았습니다. 13-group paired bootstrap 95% 구간도
+모두 음수여서 기존 v0를 유지합니다.
 
-RTX 3050 4GB 후보:
+RTX 3050 4GB 스모크와 전체 학습 결과:
 
-- SegFormer-B2
-- DeepLabV3+
-- UPerNet 입력 crop/해상도 조정
+- UPerNet-Swin-Tiny: 전체 학습 peak 1.890GiB, 5.84장/초
+- SegFormer-B1: 전체 학습 peak 0.630GiB, 11.27장/초
+- SegFormer-B2: 전체 학습 peak 1.338GiB, 8.37장/초
+
+SegFormer는 속도·VRAM 효율은 좋았지만 현재 데이터에서는 정확도가 낮았습니다.
+DeepLabV3+나 해상도 변경을 추가로 시도하는 것은 P1~P6 이후 정상 데이터가 포함된
+기준선도 목표를 충족하지 못할 때로 미룹니다.
 
 모델 변경 전 확인할 사항:
 
