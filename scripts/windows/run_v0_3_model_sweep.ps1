@@ -82,6 +82,14 @@ function Start-LoggedProcess {
         [string]$Stdout,
         [string]$Stderr
     )
+    $invalidArguments = @(
+        $Arguments | Where-Object {
+            $_ -eq $null -or [string]::IsNullOrWhiteSpace([string]$_)
+        }
+    )
+    if ($Arguments.Count -eq 0 -or $invalidArguments.Count -gt 0) {
+        throw 'Refusing to start a process with an empty argument.'
+    }
     return Start-Process -FilePath $python -ArgumentList $Arguments `
         -WorkingDirectory $project `
         -RedirectStandardOutput $Stdout `
@@ -353,7 +361,7 @@ function Invoke-FullTraining {
     }
     else {
         $startedAt = (Get-Content $startedAtPath -Raw).Trim()
-        Write-Output "Recovering completed v0.3 artifacts: $($Experiment.id)"
+        Write-Host "Recovering completed v0.3 artifacts: $($Experiment.id)"
     }
     foreach ($path in $requiredOutputs) {
         if (-not (Test-Path $path -PathType Leaf)) {
@@ -417,7 +425,10 @@ function Invoke-Benchmark {
         return Get-Content $completionPath -Raw | ConvertFrom-Json
     }
     if (Test-Path $benchmarkDir) {
-        throw "Incomplete v0.3 benchmark exists: $benchmarkDir"
+        $archiveSuffix = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
+        $archivePath = "$benchmarkDir.incomplete-$archiveSuffix"
+        Move-Item -Path $benchmarkDir -Destination $archivePath
+        Write-Host "Archived incomplete v0.3 benchmark: $archivePath"
     }
     New-Item -ItemType Directory -Force -Path $benchmarkDir | Out-Null
 
