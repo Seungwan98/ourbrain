@@ -317,14 +317,19 @@ powercfg /query SCHEME_CURRENT
 
 ## Tailscale 외부 접속
 
-Tailscale 앱은 Mac과 Windows에 설치돼 있습니다. 2026-07-31 현재 Windows는
-로그인 완료, `Running`, health 오류 0이며 Tailscale IP는 `100.92.39.77`입니다.
-`ourbrain-gpu-remote` SSH 별칭도 이 IP로 구성했습니다. 남은 작업은 Mac의
-Network Extension 사용자 보안 승인과 실제 외부 SSH 확인입니다.
+Tailscale 앱은 Mac과 Windows에 설치돼 있습니다. 2026-08-01 현재 Mac의 Network
+Extension 승인과 재부팅 후 연결이 정상화됐습니다. Windows Tailscale IP는
+`100.92.39.77`이고 Mac은 `100.103.213.109`입니다. Windows의 `Tailscale`과
+`sshd` 서비스는 모두 `Running / Automatic`이며 `ssh ourbrain-gpu-remote`로 실제
+로그인까지 확인했습니다.
 
-- Mac: Tailscale Network Extension 승인
-- Mac: Windows와 같은 tailnet에 로그인
-- Mac: LAN route가 아닌 Tailscale IP로 SSH 접속 테스트
+Tailscale 경로 확인:
+
+```bash
+tailscale status
+tailscale ping 100.92.39.77
+ssh ourbrain-gpu-remote
+```
 
 기존 LAN 별칭과 외부용 별칭은 다음처럼 분리돼 있습니다.
 
@@ -335,9 +340,20 @@ Host ourbrain-gpu-remote
     IdentityFile ~/.ssh/id_ed25519_ourbrain
 ```
 
-다른 Mac에서도 Tailscale에 같은 계정으로 로그인하고, 해당 Mac의 SSH public key를
-Windows `authorized_keys`에 추가하면 접속할 수 있습니다. private key를 메신저나
-공유 드라이브로 복사하는 방식은 권장하지 않습니다.
+본인 소유의 다른 Mac은 같은 tailnet에 로그인하면 됩니다. 다른 사람에게는 같은
+계정을 공유하지 말고 Tailscale Machines에서 `ourbrain-gpu` 한 대만 공유합니다.
+어느 경우든 새 컴퓨터마다 별도 SSH keypair를 생성하고 public key만 Windows
+`C:\ProgramData\ssh\administrators_authorized_keys`에 추가합니다. private key를
+메신저나 공유 드라이브로 복사하지 않습니다.
+
+새 컴퓨터에서 만든 `.pub` 파일을 Windows에 전송한 뒤 다음 스크립트로 중복 검사,
+백업과 ACL 고정을 함께 수행합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File D:\ourbrain\scripts\windows\add_ssh_public_key.ps1 `
+  -PublicKeyFile D:\ourbrain-bootstrap\incoming-client.pub
+```
 
 ## Vercel 정상 후보 검수
 

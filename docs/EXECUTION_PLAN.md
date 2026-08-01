@@ -31,11 +31,11 @@ specificity의 최종 합격 수치는 OurBrain 및 현장 담당자와 별도�
 | 정상 후보 검수 | 1/200 완료(uncertain 1, negative 0), 199장 남음 |
 | 운영 배포 가능 여부 | 불가 |
 
-## 2026-07-31 실행 준비 상태
+## 2026-08-01 실행 준비 상태
 
 | 단계 | 실제 데이터 작업 | 자동화/검증 준비 |
 |---|---|---|
-| P0 | 체크포인트·해시 보존 완료, Tailscale 마무리는 사용자 요청으로 연기 | LAN headless SSH·AC 덮개 동작 없음 확인 |
+| P0 | **완료**: 체크포인트·해시 보존, Tailscale 외부 SSH 연결 | Windows `Tailscale`·`sshd` 자동 실행과 `ourbrain-gpu-remote` 접속 확인 |
 | P1 | **1/200 검수(uncertain 1, negative 0), 199장 남음** | Vercel strict 완료 게이트 확인 |
 | P2 | 검수 완료 전이라 실행 대기 | Mac→Windows 경로 분리 import와 전체 decode preflight 검증 |
 | P3 | positive-only dev A/B·benchmark 완료, 최종 A/B는 정상 데이터 대기 | 동일 예산 A/B config·CUDA 4GB 확인·예약 실행·상태창 검증 |
@@ -81,11 +81,19 @@ specificity의 최종 합격 수치는 OurBrain 및 현장 담당자와 별도�
 - Windows 재부팅 후에도 Tailscale과 SSH가 자동 실행됨
 - HDMI 없이 덮개를 닫은 상태에서 외부 SSH 성공
 
+2026-08-01 완료 증거:
+
+- Mac Tailscale IP: `100.103.213.109`
+- Windows GPU Tailscale IP: `100.92.39.77`
+- Windows `Tailscale`, `sshd`: `Running / Automatic`
+- `ssh ourbrain-gpu-remote`로 `DESKTOP-2R29L47\\LENOVO` 로그인 성공
+- LAN 주소와 Tailscale 주소의 Windows SSH host key fingerprint 일치 확인
+
 ## P1. 정상/hard-negative 199장 검수
 
 **전체 계획의 임계 경로이며 가장 높은 우선순위입니다.**
 
-2026-07-31 원격 API 확인값은 revision 1, reviewed 1/200, uncertain 1,
+2026-08-01 원격 API 재확인값은 revision 1, reviewed 1/200, uncertain 1,
 negative 0, conflict 0입니다. 아직 어느 split에도 검수 정상 표본이 없습니다.
 
 검수 URL:
@@ -324,7 +332,7 @@ RTX 3050 4GB 후보:
 
 ## 즉시 실행 순서
 
-1. Tailscale 사용자 승인과 외부 SSH 검증
+1. ~~Tailscale 사용자 승인과 외부 SSH 검증~~ **완료**
 2. 검수 링크에서 남은 199장 판정
 3. 검수 완료 즉시 strict import
 4. v0.2 A/B 학습
