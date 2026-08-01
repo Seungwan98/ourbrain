@@ -386,13 +386,16 @@ uv run ourbrain-cv remote-review-download \
 negative 1장 이상을 모두 만족할 때만
 `finish_review_and_launch_v0_2.sh --launch-training`을 호출합니다.
 
-```bash
-mkdir -p artifacts/review_watcher
-nohup scripts/mac/watch_review_and_launch_v0_2.sh \
-  >artifacts/review_watcher/nohup.log 2>&1 </dev/null &
-echo $! >artifacts/review_watcher/nohup.pid
+재부팅·로그인 이후에도 감시가 자동 복구되도록 LaunchAgent로 설치합니다. 감시기가
+오류로 종료될 때만 재시작하고, strict import와 학습 예약이 성공하면 정상 종료합니다.
 
+```bash
+scripts/mac/install_review_watcher_launch_agent.sh
+scripts/mac/install_review_watcher_launch_agent.sh --status
 tail -f artifacts/review_watcher/watcher.log
+
+# 더 이상 자동 연결이 필요 없을 때
+scripts/mac/install_review_watcher_launch_agent.sh --uninstall
 ```
 
 완료 전 한 번만 gate를 확인하려면 다음을 사용합니다. exit code `3`은 오류가 아니라
