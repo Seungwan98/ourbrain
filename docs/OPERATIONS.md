@@ -381,6 +381,27 @@ uv run ourbrain-cv remote-review-download \
   --output data/negative_review/negative_review_reviewed.csv
 ```
 
+검수 완료 뒤 연락이나 수동 재실행 없이 strict import와 Windows v0.2 A/B를 이어서
+시작하려면 감시 프로세스를 실행합니다. 감시기는 200/200, conflict 0, 각 split의
+negative 1장 이상을 모두 만족할 때만
+`finish_review_and_launch_v0_2.sh --launch-training`을 호출합니다.
+
+```bash
+mkdir -p artifacts/review_watcher
+nohup scripts/mac/watch_review_and_launch_v0_2.sh \
+  >artifacts/review_watcher/nohup.log 2>&1 </dev/null &
+echo $! >artifacts/review_watcher/nohup.pid
+
+tail -f artifacts/review_watcher/watcher.log
+```
+
+완료 전 한 번만 gate를 확인하려면 다음을 사용합니다. exit code `3`은 오류가 아니라
+아직 검수 gate가 닫혀 있다는 뜻입니다.
+
+```bash
+scripts/mac/watch_review_and_launch_v0_2.sh --once
+```
+
 접근 토큰은 Git에 커밋하지 않습니다. Vercel 앱은 정상 후보 검수용이며 대용량 모델
 학습이나 GPU 추론을 수행하지 않습니다.
 

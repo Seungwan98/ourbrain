@@ -8,7 +8,7 @@ review_url="https://ourbrain-tunnel-review.vercel.app"
 env_file="$project/.env.remote-review.local"
 review_csv="$project/data/negative_review/negative_review_reviewed.csv"
 local_manifest="$project/artifacts/manifest_with_negatives.csv"
-remote_alias="${OURBRAIN_GPU_SSH_ALIAS:-ourbrain-gpu}"
+remote_alias="${OURBRAIN_GPU_SSH_ALIAS:-ourbrain-gpu-remote}"
 launch_training=0
 
 if [[ "${1:-}" == "--launch-training" ]]; then
@@ -30,12 +30,25 @@ if [[ -z "${OURBRAIN_REVIEW_TOKEN:-}" ]]; then
   exit 2
 fi
 
-for command in uv ssh scp python3; do
+for command in git uv ssh scp python3; do
   if ! command -v "$command" >/dev/null 2>&1; then
     printf 'required command is missing: %s\n' "$command" >&2
     exit 2
   fi
 done
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  printf 'local Git worktree must be clean before final review import.\n' >&2
+  exit 2
+fi
+git fetch origin main >/dev/null
+local_head="$(git rev-parse HEAD)"
+origin_head="$(git rev-parse origin/main)"
+if [[ "$local_head" != "$origin_head" ]]; then
+  printf 'local HEAD %s does not match origin/main %s.\n' \
+    "$local_head" "$origin_head" >&2
+  exit 2
+fi
 
 status_file="$(mktemp "${TMPDIR:-/tmp}/ourbrain-review-status.XXXXXX.json")"
 cleanup() {
@@ -113,22 +126,21 @@ if [[ ${#candidate_files[@]} -ne 200 ]]; then
   exit 2
 fi
 
+remote_head="$({
+  ssh "$remote_alias" 'powershell -NoProfile -Command "$ErrorActionPreference = '\''Stop'\''; Set-Location D:\ourbrain; git fetch origin main | Out-Null; git merge --ff-only origin/main | Out-Null; git rev-parse HEAD"'
+} | tail -n 1 | tr -d '\r')"
+if [[ "$remote_head" != "$local_head" ]]; then
+  printf 'Windows HEAD %s does not match local/origin HEAD %s.\n' \
+    "$remote_head" "$local_head" >&2
+  exit 2
+fi
+
 ssh "$remote_alias" \
   'powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path D:\ourbrain\data\negative_review | Out-Null"'
 scp "${candidate_files[@]}" \
   "$remote_alias:/D:/ourbrain/data/negative_review/"
 scp "$review_csv" \
   "$remote_alias:/D:/ourbrain/data/negative_review/negative_review_reviewed.csv"
-source_files=("$project"/src/ourbrain_cv/*.py)
-windows_scripts=("$project"/scripts/windows/*.ps1)
-scp "${source_files[@]}" \
-  "$remote_alias:/D:/ourbrain/src/ourbrain_cv/"
-scp "${windows_scripts[@]}" \
-  "$remote_alias:/D:/ourbrain/scripts/windows/"
-scp \
-  "$project/configs/v0_2_a_baseline_with_negatives_cuda.yaml" \
-  "$project/configs/v0_2_b_recall_with_negatives_cuda.yaml" \
-  "$remote_alias:/D:/ourbrain/configs/"
 
 if [[ $launch_training -eq 1 ]]; then
   ssh "$remote_alias" \
