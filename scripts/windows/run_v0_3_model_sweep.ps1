@@ -181,6 +181,8 @@ function Invoke-Preflight {
     }
 
     New-Item -ItemType Directory -Force -Path $orchestrationDir | Out-Null
+    Remove-Item (Join-Path $orchestrationDir 'orchestration_error.txt') `
+        -Force -ErrorAction SilentlyContinue
     Write-AtomicText -Path (Join-Path $orchestrationDir 'preflight.json') `
         -Value ($results | ConvertTo-Json -Depth 10)
     return $results
