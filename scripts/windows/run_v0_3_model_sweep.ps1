@@ -301,6 +301,20 @@ function Invoke-FullTraining {
     $historyPath = Join-Path $checkpointDir 'history.json'
     $trainingConfigPath = Join-Path $checkpointDir 'training_config.json'
     $modelConfigPath = Join-Path $checkpointDir 'model_config.json'
+    $stdout = Join-Path $runDir 'stdout.log'
+    $stderr = Join-Path $runDir 'stderr.log'
+    $startedAtPath = Join-Path $runDir 'started_at.txt'
+    $exitCodePath = Join-Path $runDir 'exit_code.txt'
+    $requiredOutputs = @(
+        $modelWeight,
+        $lastWeight,
+        $historyPath,
+        $trainingConfigPath,
+        $modelConfigPath,
+        $stdout,
+        $startedAtPath,
+        $exitCodePath
+    )
 
     if (Test-Path $completionPath -PathType Leaf) {
         $existing = Get-Content $completionPath -Raw | ConvertFrom-Json
@@ -313,43 +327,46 @@ function Invoke-FullTraining {
         }
         return $existing
     }
-    if (Test-Path $runDir) {
+    $recoverable = (Test-Path $runDir) -and @(
+        $requiredOutputs | Where-Object { Test-Path $_ -PathType Leaf }
+    ).Count -eq $requiredOutputs.Count -and [int](Get-Content $exitCodePath) -eq 0
+    if ((Test-Path $runDir) -and -not $recoverable) {
         throw "Incomplete v0.3 full training run exists: $runDir"
     }
-    New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-
-    $stdout = Join-Path $runDir 'stdout.log'
-    $stderr = Join-Path $runDir 'stderr.log'
-    $startedAt = [DateTime]::UtcNow.ToString('o')
-    Write-AtomicText -Path (Join-Path $runDir 'started_at.txt') -Value $startedAt
-    $arguments = @(
-        '-m', 'ourbrain_cv.cli', 'train',
-        '--config', $Experiment.config,
-        '--manifest', $manifest,
-        '--allow-positive-only',
-        '--device', 'cuda'
-    )
-    $process = Start-LoggedProcess -Arguments $arguments `
-        -Stdout $stdout -Stderr $stderr
-    Write-AtomicText -Path (Join-Path $runDir 'exit_code.txt') `
-        -Value ([string]$process.ExitCode)
-    if ($process.ExitCode -ne 0) {
-        throw "v0.3 full training failed: $($Experiment.id)"
+    if (-not $recoverable) {
+        New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+        $startedAt = [DateTime]::UtcNow.ToString('o')
+        Write-AtomicText -Path $startedAtPath -Value $startedAt
+        $arguments = @(
+            '-m', 'ourbrain_cv.cli', 'train',
+            '--config', $Experiment.config,
+            '--manifest', $manifest,
+            '--allow-positive-only',
+            '--device', 'cuda'
+        )
+        $process = Start-LoggedProcess -Arguments $arguments `
+            -Stdout $stdout -Stderr $stderr
+        Write-AtomicText -Path $exitCodePath -Value ([string]$process.ExitCode)
+        if ($process.ExitCode -ne 0) {
+            throw "v0.3 full training failed: $($Experiment.id)"
+        }
     }
-    foreach ($path in @(
-        $modelWeight,
-        $lastWeight,
-        $historyPath,
-        $trainingConfigPath,
-        $modelConfigPath
-    )) {
+    else {
+        $startedAt = (Get-Content $startedAtPath -Raw).Trim()
+        Write-Output "Recovering completed v0.3 artifacts: $($Experiment.id)"
+    }
+    foreach ($path in $requiredOutputs) {
         if (-not (Test-Path $path -PathType Leaf)) {
             throw "v0.3 training artifact is missing: $path"
         }
     }
 
     $result = Get-Content $stdout -Raw | ConvertFrom-Json
-    $history = @(Get-Content $historyPath -Raw | ConvertFrom-Json)
+    $historyPayload = Get-Content $historyPath -Raw | ConvertFrom-Json
+    $history = @()
+    foreach ($entry in $historyPayload) {
+        $history += $entry
+    }
     $best = $history | Sort-Object -Property @{
         Expression = { [double]$_.val_crack_dice }
         Descending = $true
