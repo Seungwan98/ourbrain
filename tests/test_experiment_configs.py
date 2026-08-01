@@ -261,7 +261,9 @@ def test_windows_v0_3_configs_only_materialize_platform_paths() -> None:
     ):
         portable = load_config(portable_path)
         windows = load_config(windows_path)
-        assert windows["data"].pop("manifest") == r"D:\ourbrain\artifacts\manifest.csv"
+        assert windows["data"].pop("manifest") == (
+            r"D:\ourbrain\artifacts\manifest_windows.csv"
+        )
         assert windows["training"].pop("output_dir").startswith(r"D:\ourbrain\runs\v0.3-")
         portable["data"].pop("manifest")
         portable["training"].pop("output_dir")

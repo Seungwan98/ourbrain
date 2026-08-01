@@ -9,7 +9,9 @@ $env:PYTHONUNBUFFERED = '1'
 
 $project = 'D:\ourbrain'
 $python = Join-Path $project '.venv\Scripts\python.exe'
-$manifest = Join-Path $project 'artifacts\manifest.csv'
+$dataRoot = 'D:\ourbrain-data\train'
+$manifest = Join-Path $project 'artifacts\manifest_windows.csv'
+$manifestAudit = Join-Path $project 'artifacts\data_audit_windows.json'
 $baselineMetrics = Join-Path (
     $project
 ) 'runs\development-benchmark\v0-validation-metrics.json'
@@ -88,10 +90,54 @@ function Start-LoggedProcess {
 }
 
 function Invoke-Preflight {
-    foreach ($path in @($python, $manifest, $baselineMetrics, $inputImage)) {
+    foreach ($path in @($python, $baselineMetrics, $inputImage)) {
         if (-not (Test-Path $path -PathType Leaf)) {
             throw "v0.3 prerequisite is missing: $path"
         }
+    }
+    if (-not (Test-Path $dataRoot -PathType Container)) {
+        throw "v0.3 Windows data root is missing: $dataRoot"
+    }
+    if (-not (Test-Path $manifest -PathType Leaf)) {
+        $prepareOutput = Join-Path $orchestrationDir 'prepare_manifest.stdout.log'
+        $prepareError = Join-Path $orchestrationDir 'prepare_manifest.stderr.log'
+        New-Item -ItemType Directory -Force -Path $orchestrationDir | Out-Null
+        $prepareArguments = @(
+            '-m', 'ourbrain_cv.cli', 'prepare',
+            '--data-root', $dataRoot,
+            '--manifest', $manifest,
+            '--audit', $manifestAudit,
+            '--train-ratio', '0.70',
+            '--val-ratio', '0.15',
+            '--test-ratio', '0.15',
+            '--seed', '42',
+            '--mask-threshold', '127'
+        )
+        $prepareProcess = Start-LoggedProcess -Arguments $prepareArguments `
+            -Stdout $prepareOutput -Stderr $prepareError
+        if ($prepareProcess.ExitCode -ne 0) {
+            throw 'Failed to build the Windows v0.3 manifest.'
+        }
+    }
+    if (
+        -not (Test-Path $manifest -PathType Leaf) -or
+        -not (Test-Path $manifestAudit -PathType Leaf)
+    ) {
+        throw 'Windows v0.3 manifest or audit is missing after preparation.'
+    }
+    $audit = Get-Content $manifestAudit -Raw | ConvertFrom-Json
+    if ($audit.paired -ne 1223 -or $audit.groups -ne 89) {
+        throw (
+            'Windows v0.3 manifest dataset identity changed: paired=' +
+            $audit.paired + ', groups=' + $audit.groups
+        )
+    }
+    $baseline = Get-Content $baselineMetrics -Raw | ConvertFrom-Json
+    if ($baseline.provenance.manifest_sha256 -ne (Get-Hash $manifest)) {
+        throw (
+            'Windows manifest does not match the manifest used for the v0 ' +
+            'validation baseline.'
+        )
     }
     foreach ($experiment in $experiments) {
         if (-not (Test-Path $experiment.config -PathType Leaf)) {
@@ -320,6 +366,8 @@ function Invoke-FullTraining {
         config_sha256 = Get-Hash $Experiment.config
         manifest = $manifest
         manifest_sha256 = Get-Hash $manifest
+        manifest_audit = $manifestAudit
+        manifest_audit_sha256 = Get-Hash $manifestAudit
         maximum_epochs = 30
         completed_epochs = $history.Count
         early_stopped = ($history.Count -lt 30)

@@ -5,7 +5,7 @@ model:
   num_labels: 2
   crack_label: 1
 data:
-  manifest: D:\ourbrain\artifacts\manifest.csv
+  manifest: D:\ourbrain\artifacts\manifest_windows.csv
   image_size: 512
   mask_threshold: 127
   synthetic_negative_probability: 0.25
