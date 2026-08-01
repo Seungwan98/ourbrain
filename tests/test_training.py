@@ -5,7 +5,12 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from ourbrain_cv.training import freeze_batch_norm_stats, group_train_val_split, train_model
+from ourbrain_cv.training import (
+    find_backbone_module,
+    freeze_batch_norm_stats,
+    group_train_val_split,
+    train_model,
+)
 
 
 class TinyDataset(Dataset):
@@ -47,6 +52,13 @@ class TinyStagedModel(nn.Module):
         return SimpleNamespace(logits=self.decode_head(features))
 
 
+class TinyWrappedSegformer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.model = nn.Module()
+        self.model.segformer = nn.Conv2d(3, 4, kernel_size=1)
+
+
 def test_freeze_batch_norm_stats_keeps_affine_trainable():
     model = nn.Sequential(nn.BatchNorm2d(3))
     model.train()
@@ -54,6 +66,11 @@ def test_freeze_batch_norm_stats_keeps_affine_trainable():
     batch_norm = model[0]
     assert not batch_norm.training
     assert batch_norm.weight.requires_grad
+
+
+def test_find_backbone_module_discovers_wrapped_segformer_encoder():
+    model = TinyWrappedSegformer()
+    assert find_backbone_module(model) is model.model.segformer
 
 
 def test_group_split_keeps_groups_disjoint():
@@ -83,6 +100,7 @@ def test_train_model_with_dummy_model_writes_history(tmp_path):
     assert result["history"]
     assert (tmp_path / "history.json").exists()
     assert (tmp_path / "pytorch_model.bin").exists()
+    assert (tmp_path / "model_config.json").exists()
 
 
 def test_train_model_continues_epoch_numbering_and_saves_last_checkpoint(tmp_path):

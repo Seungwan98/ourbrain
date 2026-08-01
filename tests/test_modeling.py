@@ -11,7 +11,10 @@ from ourbrain_cv.modeling import (
     MPSCompatibleAdaptiveAvgPool2d,
     SegmentationModelWrapper,
     _load_state_file,
+    build_model,
     enable_mps_compatibility,
+    load_model_for_inference,
+    load_pretrained_segmentation_model,
     load_upernet_swin_tiny,
 )
 
@@ -48,9 +51,56 @@ def test_load_upernet_uses_expected_hf_arguments(monkeypatch):
     model = load_upernet_swin_tiny("openmmlab/upernet-swin-tiny")
     assert isinstance(model, SegmentationModelWrapper)
     assert calls["checkpoint"] == "openmmlab/upernet-swin-tiny"
+    assert calls["kwargs"]["architecture"] == "upernet"
     assert calls["kwargs"]["num_labels"] == 2
     assert calls["kwargs"]["label2id"] == LABEL2ID
     assert calls["kwargs"]["ignore_mismatched_sizes"] is True
+
+
+def test_build_model_selects_segformer_architecture(monkeypatch):
+    calls = {}
+
+    def fake_hf_load(checkpoint, **kwargs):
+        calls["checkpoint"] = checkpoint
+        calls["kwargs"] = kwargs
+        return LowResModel()
+
+    import ourbrain_cv.modeling as modeling
+
+    monkeypatch.setattr(modeling, "_hf_load", fake_hf_load)
+    model = build_model(
+        {
+            "architecture": "segformer",
+            "checkpoint": "nvidia/segformer-b1-finetuned-ade-512-512",
+        }
+    )
+
+    assert isinstance(model, SegmentationModelWrapper)
+    assert calls["kwargs"]["architecture"] == "segformer"
+
+
+def test_build_model_rejects_unknown_architecture():
+    with pytest.raises(ValueError, match="Unsupported segmentation architecture"):
+        load_pretrained_segmentation_model("unused", architecture="mask2former")
+
+
+def test_inference_hf_directory_uses_auto_model_detection(monkeypatch, tmp_path: Path):
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    calls = {}
+
+    def fake_hf_load(checkpoint, **kwargs):
+        calls["checkpoint"] = checkpoint
+        calls["kwargs"] = kwargs
+        return LowResModel()
+
+    import ourbrain_cv.modeling as modeling
+
+    monkeypatch.setattr(modeling, "_hf_load", fake_hf_load)
+    model = load_model_for_inference(tmp_path)
+
+    assert isinstance(model, SegmentationModelWrapper)
+    assert calls["checkpoint"] == tmp_path
+    assert calls["kwargs"]["architecture"] is None
 
 
 def test_enable_mps_compatibility_replaces_adaptive_pool_without_changing_cpu_result():

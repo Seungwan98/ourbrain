@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torch import nn
 
 DEFAULT_CHECKPOINT = "openmmlab/upernet-swin-tiny"
+DEFAULT_ARCHITECTURE = "upernet"
+SUPPORTED_ARCHITECTURES = frozenset({"upernet", "segformer"})
 ID2LABEL = {0: "background", 1: "crack"}
 LABEL2ID = {v: k for k, v in ID2LABEL.items()}
 
@@ -19,6 +21,7 @@ LABEL2ID = {v: k for k, v in ID2LABEL.items()}
 class ModelConfig:
     """Configuration for the Hugging Face segmentation backbone."""
 
+    architecture: str = DEFAULT_ARCHITECTURE
     checkpoint: str = DEFAULT_CHECKPOINT
     num_labels: int = 2
     id2label: dict[int, str] | None = None
@@ -95,13 +98,58 @@ def enable_mps_compatibility(model: nn.Module) -> nn.Module:
     return model
 
 
-def _hf_load(checkpoint: str | Path, **kwargs: Any) -> nn.Module:
+def _normalize_architecture(architecture: str) -> str:
+    normalized = architecture.strip().lower().replace("-", "_")
+    if normalized not in SUPPORTED_ARCHITECTURES:
+        supported = ", ".join(sorted(SUPPORTED_ARCHITECTURES))
+        raise ValueError(
+            f"Unsupported segmentation architecture {architecture!r}; expected one of: {supported}"
+        )
+    return normalized
+
+
+def _hf_load(
+    checkpoint: str | Path,
+    *,
+    architecture: str | None = None,
+    **kwargs: Any,
+) -> nn.Module:
     import transformers
 
-    model_cls = transformers.__dict__.get("UperNetForSemanticSegmentation")
-    if model_cls is None:
-        model_cls = transformers.UperNetForSemanticSegmentation
+    if architecture is None:
+        model_cls = transformers.AutoModelForSemanticSegmentation
+    else:
+        class_name = {
+            "upernet": "UperNetForSemanticSegmentation",
+            "segformer": "SegformerForSemanticSegmentation",
+        }[_normalize_architecture(architecture)]
+        model_cls = getattr(transformers, class_name)
     return model_cls.from_pretrained(str(checkpoint), **kwargs)
+
+
+def load_pretrained_segmentation_model(
+    checkpoint: str | Path = DEFAULT_CHECKPOINT,
+    *,
+    architecture: str = DEFAULT_ARCHITECTURE,
+    num_labels: int = 2,
+    id2label: dict[int, str] | None = None,
+    label2id: dict[str, int] | None = None,
+    wrap: bool = True,
+    ignore_mismatched_sizes: bool = True,
+    **kwargs: Any,
+) -> nn.Module:
+    """Load a supported Hugging Face semantic-segmentation architecture."""
+
+    model = _hf_load(
+        checkpoint,
+        architecture=architecture,
+        num_labels=num_labels,
+        id2label=id2label or ID2LABEL,
+        label2id=label2id or LABEL2ID,
+        ignore_mismatched_sizes=ignore_mismatched_sizes,
+        **kwargs,
+    )
+    return SegmentationModelWrapper(model) if wrap else model
 
 
 def load_upernet_swin_tiny(
@@ -116,15 +164,16 @@ def load_upernet_swin_tiny(
 ) -> nn.Module:
     """Load ``openmmlab/upernet-swin-tiny`` for two-class crack segmentation."""
 
-    model = _hf_load(
+    return load_pretrained_segmentation_model(
         checkpoint,
+        architecture="upernet",
         num_labels=num_labels,
         id2label=id2label or ID2LABEL,
         label2id=label2id or LABEL2ID,
+        wrap=wrap,
         ignore_mismatched_sizes=ignore_mismatched_sizes,
         **kwargs,
     )
-    return SegmentationModelWrapper(model) if wrap else model
 
 
 def build_model(config: ModelConfig | dict[str, Any] | None = None, **overrides: Any) -> nn.Module:
@@ -137,7 +186,7 @@ def build_model(config: ModelConfig | dict[str, Any] | None = None, **overrides:
     else:
         params = {**config.__dict__}
     params.update(overrides)
-    return load_upernet_swin_tiny(**params)
+    return load_pretrained_segmentation_model(**params)
 
 
 def _load_state_file(model: nn.Module, checkpoint: Path) -> None:
@@ -185,6 +234,7 @@ def load_model_for_inference(
     checkpoint: str | Path,
     *,
     base_checkpoint: str | Path = DEFAULT_CHECKPOINT,
+    architecture: str | None = None,
     num_labels: int = 2,
     id2label: dict[int, str] | None = None,
     label2id: dict[str, int] | None = None,
@@ -207,9 +257,9 @@ def load_model_for_inference(
     }
 
     if checkpoint_path.is_dir() and (checkpoint_path / "config.json").exists():
-        model = _hf_load(checkpoint_path, **common)
+        model = _hf_load(checkpoint_path, architecture=None, **common)
     else:
-        model = _hf_load(base_checkpoint, **common)
+        model = _hf_load(base_checkpoint, architecture=architecture, **common)
         _load_state_file(model, checkpoint_path)
     return SegmentationModelWrapper(model) if wrap else model
 

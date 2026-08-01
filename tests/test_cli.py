@@ -172,6 +172,14 @@ def test_train_parser_supports_manifest_override_and_smoke_bypass():
             "source-checkpoint",
             "--output-dir",
             "round-output",
+            "--epochs",
+            "1",
+            "--freeze-backbone-epochs",
+            "0",
+            "--max-train-samples",
+            "10",
+            "--max-val-samples",
+            "4",
             "--allow-positive-only",
         ]
     )
@@ -179,7 +187,38 @@ def test_train_parser_supports_manifest_override_and_smoke_bypass():
     assert args.manifest == "custom.csv"
     assert args.model_checkpoint == "source-checkpoint"
     assert args.output_dir == "round-output"
+    assert args.epochs == 1
+    assert args.freeze_backbone_epochs == 0
+    assert args.max_train_samples == 10
+    assert args.max_val_samples == 4
     assert args.allow_positive_only is True
+
+
+def test_training_overrides_apply_bounded_smoke_budget() -> None:
+    raw = {
+        "model": {"checkpoint": "source"},
+        "training": {"output_dir": "output", "epochs": 30},
+    }
+    args = build_parser().parse_args(
+        [
+            "train",
+            "--epochs",
+            "1",
+            "--freeze-backbone-epochs",
+            "0",
+            "--max-train-samples",
+            "10",
+            "--max-val-samples",
+            "4",
+        ]
+    )
+
+    _apply_training_overrides(raw, args)
+
+    assert raw["training"]["epochs"] == 1
+    assert raw["training"]["freeze_backbone_epochs"] == 0
+    assert raw["training"]["max_train_samples"] == 10
+    assert raw["training"]["max_val_samples"] == 4
 
 
 def test_training_transform_reads_augmentation_config() -> None:

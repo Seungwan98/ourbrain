@@ -97,7 +97,7 @@ def find_backbone_module(model: nn.Module) -> nn.Module | None:
     if isinstance(wrapped, nn.Module):
         roots.append(wrapped)
     for root in roots:
-        for path in ("upernet.backbone", "backbone"):
+        for path in ("upernet.backbone", "segformer", "backbone"):
             current: Any = root
             for name in path.split("."):
                 current = getattr(current, name, None)
@@ -309,6 +309,8 @@ def train_model(
 
     model = model or build_model(model_config)
     model.to(dev)
+    if dev.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(dev)
     if dev.type == "mps":
         enable_mps_compatibility(model)
     criterion = CrackSegmentationLoss(
@@ -432,6 +434,10 @@ def train_model(
     (output / "training_config.json").write_text(
         json.dumps(asdict(cfg), ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    model_config_path = output / "model_config.json"
+    model_config_path.write_text(
+        json.dumps(model_config or {}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     return {
         "history": history,
         "history_path": str(history_path),
@@ -439,4 +445,8 @@ def train_model(
         "last_checkpoint": str(last_path) if last_path else None,
         "best_score": best_score,
         "device": str(dev),
+        "model_config_path": str(model_config_path),
+        "peak_cuda_memory_bytes": (
+            int(torch.cuda.max_memory_allocated(dev)) if dev.type == "cuda" else None
+        ),
     }

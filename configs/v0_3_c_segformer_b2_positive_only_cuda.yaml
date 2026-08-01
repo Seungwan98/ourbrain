@@ -1,0 +1,58 @@
+seed: 42
+model:
+  architecture: segformer
+  checkpoint: nvidia/segformer-b2-finetuned-ade-512-512
+  num_labels: 2
+  crack_label: 1
+data:
+  manifest: D:\ourbrain\artifacts\manifest.csv
+  image_size: 512
+  mask_threshold: 127
+  synthetic_negative_probability: 0.25
+  synthetic_negative_crop_size: 256
+  crack_centered_probability: 0.5
+  crack_centered_crop_size: 384
+  augmentation:
+    horizontal_flip_probability: 0.5
+    vertical_flip_probability: 0.25
+    brightness_jitter: 0.2
+    contrast_jitter: 0.2
+    rotation_degrees: 8.0
+    gamma_jitter: 0.15
+    gaussian_blur_probability: 0.15
+    gaussian_blur_radius: 1.0
+    gaussian_noise_probability: 0.2
+    gaussian_noise_std: 0.015
+training:
+  output_dir: D:\ourbrain\runs\v0.3-c-segformer-b2-positive-only\checkpoint
+  epochs: 30
+  batch_size: 1
+  gradient_accumulation_steps: 8
+  learning_rate: 0.00006
+  weight_decay: 0.01
+  num_workers: 0
+  mixed_precision: true
+  freeze_batch_norm: true
+  freeze_backbone_epochs: 2
+  early_stopping_patience: 6
+  focal_alpha: 0.75
+  focal_gamma: 2.0
+  focal_weight: 1.0
+  dice_weight: 1.0
+  boundary_weight: 0.25
+  tversky_weight: 0.25
+  tversky_alpha: 0.3
+  tversky_beta: 0.7
+  cldice_weight: 0.15
+  cldice_iterations: 3
+  lr_scheduler: cosine
+  warmup_ratio: 0.1
+  minimum_learning_rate_ratio: 0.1
+  save_last_checkpoint: true
+inference:
+  tile_size: 512
+  overlap: 96
+  threshold: 0.5
+  minimum_component_pixels: 8
+  image_level_minimum_pixels: 16
+  maximum_positive_ratio: 0.25

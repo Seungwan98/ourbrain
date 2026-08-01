@@ -119,6 +119,15 @@ def _apply_training_overrides(
         raw["model"]["checkpoint"] = model_checkpoint
     if output_dir:
         raw["training"]["output_dir"] = output_dir
+    for field in (
+        "epochs",
+        "freeze_backbone_epochs",
+        "max_train_samples",
+        "max_val_samples",
+    ):
+        value = getattr(args, field, None)
+        if value is not None:
+            raw["training"][field] = value
     if Path(str(raw["model"]["checkpoint"])).expanduser().resolve() == Path(
         str(raw["training"]["output_dir"])
     ).expanduser().resolve():
@@ -277,7 +286,7 @@ def _review_ui(args: argparse.Namespace) -> int:
 
 
 def _model_config(raw: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"checkpoint", "num_labels", "id2label", "label2id"}
+    allowed = {"architecture", "checkpoint", "num_labels", "id2label", "label2id"}
     return {key: value for key, value in raw["model"].items() if key in allowed}
 
 
@@ -1004,7 +1013,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     review_ui.set_defaults(handler=_review_ui)
 
-    train = subparsers.add_parser("train", help="fine-tune UPerNet-Swin-Tiny")
+    train = subparsers.add_parser("train", help="fine-tune a supported segmentation model")
     train.add_argument("--config", default="configs/upernet_swin_tiny.yaml")
     train.add_argument("--manifest", help="override data.manifest from the config")
     train.add_argument(
@@ -1014,6 +1023,22 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument(
         "--output-dir",
         help="override training.output_dir without changing the source config",
+    )
+    train.add_argument("--epochs", type=int, help="override the maximum epoch count")
+    train.add_argument(
+        "--freeze-backbone-epochs",
+        type=int,
+        help="override frozen-backbone epochs for a bounded smoke run",
+    )
+    train.add_argument(
+        "--max-train-samples",
+        type=int,
+        help="limit training samples for a bounded smoke run",
+    )
+    train.add_argument(
+        "--max-val-samples",
+        type=int,
+        help="limit validation samples for a bounded smoke run",
     )
     train.add_argument(
         "--allow-positive-only",

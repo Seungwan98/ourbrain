@@ -59,6 +59,23 @@ def test_tversky_and_cldice_prefer_aligned_thin_cracks():
     assert soft_cldice_loss(aligned, labels) < soft_cldice_loss(missed, labels)
 
 
+def test_tversky_beta_increases_false_negative_cost() -> None:
+    labels = torch.zeros(1, 2, 2, dtype=torch.long)
+    labels[:, 0, 0] = 1
+    missed_positive = torch.tensor(
+        [[[[8.0, 8.0], [8.0, 8.0]], [[-8.0, -8.0], [-8.0, -8.0]]]]
+    )
+
+    low_fn_cost = soft_tversky_loss(
+        missed_positive, labels, alpha=0.3, beta=0.3
+    )
+    high_fn_cost = soft_tversky_loss(
+        missed_positive, labels, alpha=0.3, beta=0.7
+    )
+
+    assert high_fn_cost > low_fn_cost
+
+
 def test_combined_loss_includes_configured_tversky_and_cldice():
     logits = torch.randn(1, 2, 8, 8, requires_grad=True)
     labels = torch.zeros(1, 8, 8, dtype=torch.long)
