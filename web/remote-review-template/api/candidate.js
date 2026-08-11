@@ -1,12 +1,27 @@
 import { get } from "@vercel/blob";
 
 import { authorized, jsonResponse } from "../lib/auth.js";
+import { readBundledCandidate } from "../lib/candidate-file.js";
 import { CANDIDATES } from "../lib/dataset.js";
 
 const CANDIDATE_BY_ID = new Map(CANDIDATES.map((row) => [row.id, row]));
 
+function candidateResponse(candidate, body, contentType, source) {
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Cache-Control": "private, no-store",
+      "Content-Type": contentType ?? candidate.imageContentType,
+      "ETag": `"${candidate.imageSha256}"`,
+      "X-Candidate-Source": source,
+      "X-Content-SHA256": candidate.imageSha256,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
 async function handle(request) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.REVIEW_TOKEN) {
+  if (!process.env.REVIEW_TOKEN) {
     return jsonResponse({ error: "review service is not configured" }, 503);
   }
   if (!authorized(request)) {
@@ -20,20 +35,32 @@ async function handle(request) {
   if (!candidate) {
     return jsonResponse({ error: "candidate not found" }, 404);
   }
-  const blob = await get(candidate.imageBlobPath, { access: "private" });
-  if (!blob || blob.statusCode !== 200 || !blob.stream) {
-    return jsonResponse({ error: "candidate image is not available" }, 404);
+  const bundled = await readBundledCandidate(candidate);
+  if (bundled) {
+    return candidateResponse(
+      candidate,
+      bundled,
+      candidate.imageContentType ?? "application/octet-stream",
+      "bundle",
+    );
   }
-  return new Response(blob.stream, {
-    status: 200,
-    headers: {
-      "Cache-Control": "private, no-store",
-      "Content-Type": blob.blob.contentType ?? "application/octet-stream",
-      "ETag": `"${candidate.imageSha256}"`,
-      "X-Content-SHA256": candidate.imageSha256,
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const blob = await get(candidate.imageBlobPath, { access: "private" });
+      if (blob?.statusCode === 200 && blob.stream) {
+        return candidateResponse(
+          candidate,
+          blob.stream,
+          blob.blob.contentType,
+          "blob",
+        );
+      }
+    } catch (error) {
+      console.warn("candidate blob unavailable", error);
+    }
+  }
+  return jsonResponse({ error: "candidate image is not available" }, 404);
 }
 
 export default {

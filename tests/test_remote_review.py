@@ -109,6 +109,17 @@ def test_build_remote_review_bundle_copies_assets_and_binds_dataset(tmp_path: Pa
     assert changed_deployed.name != first_deployed_name
 
 
+def test_remote_review_template_bundles_private_candidate_fallback():
+    template = Path("web/remote-review-template")
+    vercel_config = json.loads((template / "vercel.json").read_text())
+
+    assert (
+        vercel_config["functions"]["api/candidate.js"]["includeFiles"]
+        == "private-candidates/**"
+    )
+    assert (template / "lib" / "candidate-file.js").is_file()
+
+
 def test_remote_review_endpoint_requires_https_except_loopback(monkeypatch):
     monkeypatch.setenv("OURBRAIN_REVIEW_TOKEN", "secret")
     with pytest.raises(ValueError, match="must use HTTPS"):

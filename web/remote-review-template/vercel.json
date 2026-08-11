@@ -1,6 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
+  "functions": {
+    "api/candidate.js": {
+      "includeFiles": "private-candidates/**"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

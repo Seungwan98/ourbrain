@@ -521,3 +521,9 @@ uv run ourbrain-cv evaluate \
 
 의도된 품질 게이트입니다. `--allow-positive-only`로 최종 학습을 우회하지 말고 200장
 검수를 완료해야 합니다.
+
+### Vercel 검수 이미지가 500으로 실패
+
+`/api/review-state`는 성공하지만 `/api/candidate`만 실패하면 응답과 Vercel 로그에서
+Blob 차단 여부를 먼저 확인합니다. 배포 번들에 포함된 동일 이미지는 인증 API의
+fallback으로 제공되며 `X-Candidate-Source: bundle` 헤더로 확인할 수 있습니다.
